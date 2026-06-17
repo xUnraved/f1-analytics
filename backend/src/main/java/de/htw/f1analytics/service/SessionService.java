@@ -1,6 +1,8 @@
 package de.htw.f1analytics.service;
 
 import de.htw.f1analytics.client.OpenF1Client;
+import de.htw.f1analytics.client.OpenF1DriverDto;
+import de.htw.f1analytics.client.OpenF1ResultDto;
 import de.htw.f1analytics.client.OpenF1SessionDto;
 import de.htw.f1analytics.domain.SessionEntity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,6 +34,14 @@ public class SessionService {
 
         SessionEntity.persist(entities);
         return entities;
+    }
+
+    public List<OpenF1ResultDto> getRaceResults(int sessionKey) {
+        return openF1Client.getResults(sessionKey);
+    }
+
+    public List<OpenF1DriverDto> getDrivers(int sessionKey) {
+        return openF1Client.getDrivers(sessionKey);
     }
 
     private static SessionEntity toEntity(OpenF1SessionDto dto) {

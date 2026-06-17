@@ -1,6 +1,7 @@
 package de.htw.f1analytics.domain;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 
@@ -14,5 +15,6 @@ public class SessionEntity extends PanacheEntityBase {
     public String countryName;
     public String circuitShortName;
     public String dateStart;
+    @Column(name = "session_year")
     public Integer year;
 }
