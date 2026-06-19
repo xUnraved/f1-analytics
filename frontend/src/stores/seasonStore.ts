@@ -31,21 +31,38 @@ export const useSeasonStore = defineStore('season', () => {
     }
   }
 
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+  function stopPoll() {
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer)
+      pollTimer = null
+    }
+  }
+
   async function loadSeason(y: number) {
+    stopPoll()
     const cached = cache.get(y)
-    if (cached) {
+    if (cached && !cached.loading) {
       stats.value = cached
+      loading.value = false
       return
     }
     loading.value = true
     error.value = null
     try {
       const data = await fetchSeason(y)
-      cache.set(y, data)
-      stats.value = data
+      if (data.loading) {
+        // Backend lädt noch im Hintergrund — nach 6s erneut versuchen
+        stats.value = data
+        pollTimer = setTimeout(() => loadSeason(y), 6000)
+      } else {
+        cache.set(y, data)
+        stats.value = data
+        loading.value = false
+      }
     } catch {
       error.value = 'Saisondaten konnten nicht geladen werden.'
-    } finally {
       loading.value = false
     }
   }

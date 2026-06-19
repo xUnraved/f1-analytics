@@ -5,6 +5,7 @@ import de.htw.f1analytics.client.OpenF1DriverDto;
 import de.htw.f1analytics.client.OpenF1ResultDto;
 import de.htw.f1analytics.client.OpenF1SessionDto;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
 @ApplicationScoped
@@ -25,6 +27,9 @@ public class SeasonService {
 
     @RestClient
     OpenF1Client openF1Client;
+
+    @Inject
+    SeasonCacheStore cacheStore;
 
     public record ResultRow(String abbr, String name, String team, String color,
                             int pos, int pts, String gapText, boolean dnf,
@@ -35,7 +40,7 @@ public class SeasonService {
                        List<ResultRow> result, ResultRow fastestLap) {}
 
     public record DriverStanding(String abbr, String name, String team, int num, String color,
-                                 int points, int wins, int podiums, int poles, int dnf,
+                                 int points, int wins, int podiums, int dnf,
                                  List<Integer> finishes, List<Integer> cum,
                                  Double avgFinish, Integer bestFinish) {}
 
@@ -43,14 +48,17 @@ public class SeasonService {
                                List<DriverStanding> drivers) {}
 
     public record SeasonStats(List<Race> races, List<DriverStanding> drivers,
-                              List<TeamStanding> teams) {}
+                              List<TeamStanding> teams, boolean loading) {}
 
-    private static final int START_YEAR = 2023;
+    static final int START_YEAR = 2023;
     private static final int[] POINTS = {25, 18, 15, 12, 10, 8, 6, 4, 2, 1};
-    private static final long THROTTLE_MS = 120;
+    private static final long THROTTLE_MS = 2500;
     private static final int MAX_RETRY = 4;
 
     private final Map<Integer, SeasonStats> cache = new ConcurrentHashMap<>();
+    private final java.util.Set<Integer> fetching = ConcurrentHashMap.newKeySet();
+    // Global 1-permit semaphore: only one year fetches OpenF1 at a time to stay under rate limit
+    private static final Semaphore API_SLOT = new Semaphore(1);
 
     private static final Map<String, double[]> COORDS = Map.ofEntries(
             Map.entry("Sakhir", new double[]{26.03, 50.51}),
@@ -95,7 +103,6 @@ public class SeasonService {
         int points;
         int wins;
         int podiums;
-        int poles;
         int dnf;
         final List<Integer> finishes = new ArrayList<>();
         final List<Integer> cum = new ArrayList<>();
@@ -112,6 +119,58 @@ public class SeasonService {
         SeasonStats cached = cache.get(year);
         if (cached != null) return cached;
 
+        SeasonStats fromDb = cacheStore.load(year);
+        if (fromDb != null) {
+            cache.put(year, fromDb);
+            return fromDb;
+        }
+
+        // Hintergrund-Fetch starten (nur einmal pro Jahr)
+        if (fetching.add(year)) {
+            Thread.ofVirtual().name("season-fetch-" + year).start(() -> {
+                try {
+                    buildAndCache(year);
+                } finally {
+                    fetching.remove(year);
+                }
+            });
+        }
+
+        return new SeasonStats(List.of(), List.of(), List.of(), true);
+    }
+
+    /** Blocking version for use by CacheWarmer — loads from DB/cache or fetches synchronously. */
+    public void ensureCached(int year) {
+        if (cache.containsKey(year)) return;
+        SeasonStats fromDb = cacheStore.load(year);
+        if (fromDb != null) {
+            cache.put(year, fromDb);
+            return;
+        }
+        if (fetching.add(year)) {
+            try {
+                buildAndCache(year);
+            } finally {
+                fetching.remove(year);
+            }
+        }
+    }
+
+    private void buildAndCache(int year) {
+        try {
+            API_SLOT.acquire();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        try {
+            buildAndCacheInternal(year);
+        } finally {
+            API_SLOT.release();
+        }
+    }
+
+    private void buildAndCacheInternal(int year) {
         List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
 
         List<OpenF1SessionDto> raceSessions = sessions.stream()
@@ -119,14 +178,12 @@ public class SeasonService {
                 .sorted(Comparator.comparing(s -> s.dateStart() == null ? "" : s.dateStart()))
                 .toList();
 
-        List<OpenF1SessionDto> qualiSessions = sessions.stream()
-                .filter(s -> s.sessionKey() != null && "Qualifying".equals(s.sessionName()))
-                .toList();
-
         Map<Integer, Accum> byNum = new LinkedHashMap<>();
 
-        for (OpenF1SessionDto rs : raceSessions) {
-            for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(rs.sessionKey()))) {
+        // One driver-info call: use the most recent race session so we get current team/color data
+        if (!raceSessions.isEmpty()) {
+            OpenF1SessionDto refSession = raceSessions.get(raceSessions.size() - 1);
+            for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(refSession.sessionKey()))) {
                 if (d.driverNumber() == null) continue;
                 Accum a = byNum.computeIfAbsent(d.driverNumber(), k -> new Accum());
                 a.num = d.driverNumber();
@@ -134,15 +191,6 @@ public class SeasonService {
                 a.name = orElse(d.fullName(), a.abbr);
                 a.team = orElse(d.teamName(), "—");
                 a.color = d.teamColour() != null ? "#" + d.teamColour() : "#888888";
-            }
-        }
-
-        for (OpenF1SessionDto qs : qualiSessions) {
-            for (OpenF1ResultDto r : fetch(() -> openF1Client.getResults(qs.sessionKey()))) {
-                if (r.position() != null && r.position() == 1 && r.driverNumber() != null) {
-                    Accum a = byNum.get(r.driverNumber());
-                    if (a != null) a.poles++;
-                }
             }
         }
 
@@ -158,8 +206,16 @@ public class SeasonService {
 
             List<ResultRow> result = new ArrayList<>();
             for (OpenF1ResultDto r : rows) {
-                Accum a = byNum.get(r.driverNumber());
-                if (a == null) continue;
+                int num = r.driverNumber();
+                Accum a = byNum.computeIfAbsent(num, k -> {
+                    Accum x = new Accum();
+                    x.num = num;
+                    x.abbr = "#" + num;
+                    x.name = "#" + num;
+                    x.team = "—";
+                    x.color = "#888888";
+                    return x;
+                });
                 int pos = r.position();
                 boolean dnf = Boolean.TRUE.equals(r.dnf());
                 boolean dns = Boolean.TRUE.equals(r.dns());
@@ -204,7 +260,7 @@ public class SeasonService {
             Integer best = a.finishes.isEmpty() ? null
                     : a.finishes.stream().mapToInt(Integer::intValue).min().getAsInt();
             drivers.add(new DriverStanding(a.abbr, a.name, a.team, a.num, a.color,
-                    a.points, a.wins, a.podiums, a.poles, a.dnf,
+                    a.points, a.wins, a.podiums, a.dnf,
                     List.copyOf(a.finishes), List.copyOf(a.cum), avg, best));
         }
         drivers.sort(Comparator.comparingInt(DriverStanding::points).reversed());
@@ -222,9 +278,11 @@ public class SeasonService {
         }
         teams.sort(Comparator.comparingInt(TeamStanding::points).reversed());
 
-        SeasonStats stats = new SeasonStats(races, drivers, teams);
-        if (!races.isEmpty()) cache.put(year, stats);
-        return stats;
+        SeasonStats stats = new SeasonStats(races, drivers, teams, false);
+        if (!races.isEmpty()) {
+            cache.put(year, stats);
+            cacheStore.save(year, stats);
+        }
     }
 
     private <T> List<T> fetch(Supplier<List<T>> call) {
@@ -238,9 +296,14 @@ public class SeasonService {
                 return List.of();
             } catch (WebApplicationException e) {
                 int s = e.getResponse() != null ? e.getResponse().getStatus() : 0;
-                if ((s == 429 || s >= 500) && attempts < MAX_RETRY) {
+                if (s == 429 && attempts < MAX_RETRY) {
                     attempts++;
-                    sleepQuiet(700L * attempts);
+                    sleepQuiet(65_000L); // Rate-Limit: 1 Minute warten
+                    continue;
+                }
+                if (s >= 500 && attempts < MAX_RETRY) {
+                    attempts++;
+                    sleepQuiet(2000L * attempts);
                     continue;
                 }
                 return List.of();

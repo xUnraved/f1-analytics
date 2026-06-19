@@ -83,7 +83,6 @@ const metrics: Metric[] = [
   { l: 'PUNKTE', g: (d) => d.points, f: (v) => String(v), low: false },
   { l: 'SIEGE', g: (d) => d.wins, f: (v) => String(v), low: false },
   { l: 'PODESTPLÄTZE', g: (d) => d.podiums, f: (v) => String(v), low: false },
-  { l: 'POLES', g: (d) => d.poles, f: (v) => String(v), low: false },
   { l: 'BESTE PLATZIERUNG', g: (d) => d.bestFinish, f: (v) => (v == null ? '–' : 'P' + v), low: true },
   { l: 'Ø PLATZIERUNG', g: (d) => d.avgFinish, f: (v) => (v == null ? '–' : v.toFixed(1)), low: true },
   { l: 'DNF', g: (d) => d.dnf, f: (v) => String(v), low: false },

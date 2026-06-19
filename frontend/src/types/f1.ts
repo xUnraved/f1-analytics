@@ -37,7 +37,6 @@ export interface DriverStanding extends Driver {
   points: number
   wins: number
   podiums: number
-  poles: number
   dnf: number
   finishes: number[]
   cum: number[]
@@ -57,4 +56,5 @@ export interface SeasonStats {
   races: Race[]
   drivers: DriverStanding[]
   teams: TeamStanding[]
+  loading: boolean
 }

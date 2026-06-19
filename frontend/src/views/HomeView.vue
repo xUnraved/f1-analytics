@@ -16,7 +16,11 @@
         <div class="ro"><span>FAHRER</span><b>{{ store.drivers.length }}</b></div>
         <div class="ro"><span>TEAMS</span><b>{{ store.teams.length }}</b></div>
       </div>
-      <div class="enter-hint"><span class="arrow">↓</span> RENNEN ERKUNDEN</div>
+      <div v-if="store.loading" class="loading-bar">
+        <div class="loading-track"><div class="loading-fill"></div></div>
+        <span class="loading-label">Daten werden von OpenF1 geladen …</span>
+      </div>
+      <div v-else class="enter-hint"><span class="arrow">↓</span> RENNEN ERKUNDEN</div>
     </div>
 
     <div class="cockpit">
@@ -209,6 +213,40 @@ watch(
   font-weight: 700;
   font-size: 24px;
   color: var(--text);
+}
+
+.loading-bar {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.loading-track {
+  height: 2px;
+  background: var(--line);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.loading-fill {
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: scan 1.6s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+.loading-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
 }
 
 .enter-hint {

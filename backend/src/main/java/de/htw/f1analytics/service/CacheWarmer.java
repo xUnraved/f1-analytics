@@ -1,0 +1,40 @@
+package de.htw.f1analytics.service;
+
+import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.time.Year;
+import java.util.ArrayList;
+import java.util.List;
+
+@ApplicationScoped
+public class CacheWarmer {
+
+    private static final Logger LOG = Logger.getLogger(CacheWarmer.class);
+
+    @Inject
+    SeasonService seasonService;
+
+    void onStart(@Observes StartupEvent ev) {
+        int cur = Year.now().getValue();
+        // Warm years newest-first so the default view (current year) is ready first
+        List<Integer> years = new ArrayList<>();
+        for (int y = cur; y >= SeasonService.START_YEAR; y--) years.add(y);
+
+        Thread.ofVirtual().name("cache-warmer").start(() -> {
+            for (int y : years) {
+                LOG.infof("Cache-Warming Saison %d ...", y);
+                try {
+                    seasonService.ensureCached(y);
+                    SeasonService.SeasonStats s = seasonService.seasonStats(y);
+                    LOG.infof("Cache-Warming %d fertig: %d Rennen, %d Fahrer", y, s.races().size(), s.drivers().size());
+                } catch (Exception e) {
+                    LOG.warnf("Cache-Warming %d fehlgeschlagen: %s", y, e.getMessage());
+                }
+            }
+        });
+    }
+}

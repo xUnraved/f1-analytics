@@ -142,14 +142,12 @@ const teamMetrics: TMetric[] = [
   { l: 'PUNKTE', g: (t) => t.points },
   { l: 'SIEGE', g: (t) => t.wins },
   { l: 'PODESTPLÄTZE', g: (t) => t.drivers.reduce((s, d) => s + d.podiums, 0) },
-  { l: 'POLE POSITIONS', g: (t) => t.drivers.reduce((s, d) => s + d.poles, 0) },
 ]
 
 const driverMetrics: DMetric[] = [
   { l: 'PUNKTE', g: (d) => d.points, f: (v) => String(v) },
   { l: 'SIEGE', g: (d) => d.wins, f: (v) => String(v) },
   { l: 'PODESTPLÄTZE', g: (d) => d.podiums, f: (v) => String(v) },
-  { l: 'POLES', g: (d) => d.poles, f: (v) => String(v) },
   { l: 'Ø PLATZIERUNG', g: (d) => d.avgFinish, f: (v) => (v == null ? '–' : v.toFixed(1)), low: true },
   { l: 'DNF', g: (d) => d.dnf, f: (v) => String(v) },
 ]
