@@ -12,5 +12,6 @@ public record OpenF1SessionDto(
         @JsonProperty("location") String location,
         @JsonProperty("circuit_short_name") String circuitShortName,
         @JsonProperty("date_start") String dateStart,
-        @JsonProperty("year") Integer year
+        @JsonProperty("year") Integer year,
+        @JsonProperty("meeting_key") Integer meetingKey
 ) {}

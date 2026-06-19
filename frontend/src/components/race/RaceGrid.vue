@@ -4,9 +4,8 @@
     <div class="mono count">{{ store.races.length }} RENNEN</div>
   </div>
 
-  <div v-if="store.loading" class="state">Lädt …</div>
-  <div v-else-if="store.error" class="state">{{ store.error }}</div>
-  <div v-else-if="store.races.length === 0" class="state">Keine Rennen für diese Saison.</div>
+  <div v-if="store.error" class="state">{{ store.error }}</div>
+  <div v-else-if="store.loading && store.races.length === 0" class="state">Lädt …</div>
 
   <div v-else class="tiles">
     <button
@@ -19,12 +18,24 @@
       <span class="date">{{ race.date }}</span>
       <div class="rnd">RUNDE {{ String(race.round).padStart(2, '0') }}</div>
       <div class="gp">{{ race.gp }}</div>
-      <div class="ct">{{ race.circuit }} · {{ race.country }}</div>
+      <div class="ct">
+        {{ race.circuit }} ·
+        <img v-if="race.countryFlag" :src="race.countryFlag" :alt="race.country" class="flag" />
+        {{ race.country }}
+      </div>
       <div v-if="race.result.length" class="win">
         <i :style="{ background: race.result[0]!.color }"></i>
         Sieger: {{ race.result[0]!.name }}
       </div>
     </button>
+  </div>
+
+  <div v-if="store.loading && store.races.length > 0" class="loading-more">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span v-if="store.totalRaces > 0">
+      {{ store.races.length }} von {{ store.totalRaces }} Rennen geladen
+    </span>
+    <span v-else>Weitere Rennen werden geladen …</span>
   </div>
 </template>
 
@@ -52,6 +63,32 @@ function select(i: number) {
   font-size: 11px;
   color: var(--text-faint);
   letter-spacing: 0.1em;
+}
+
+.loading-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50%       { opacity: 1;   transform: scale(1.2); }
 }
 
 .state {
@@ -114,10 +151,21 @@ function select(i: number) {
 }
 
 .tile .ct {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-dim);
   margin-top: 3px;
+}
+
+.flag {
+  width: 20px;
+  height: 13px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .tile .win {

@@ -7,7 +7,7 @@ public record OpenF1ResultDto(
         @JsonProperty("driver_number") Integer driverNumber,
         @JsonProperty("position") Integer position,
         @JsonProperty("number_of_laps") Integer numberOfLaps,
-        @JsonProperty("duration") Double duration,
+        @JsonProperty("duration") Object duration,
         @JsonProperty("gap_to_leader") Object gapToLeader,
         @JsonProperty("dnf") Boolean dnf,
         @JsonProperty("dns") Boolean dns,

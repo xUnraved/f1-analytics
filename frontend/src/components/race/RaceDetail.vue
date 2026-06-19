@@ -15,7 +15,10 @@
         </div>
         <div class="race-sub">
           <span>{{ race.circuit }}</span>
-          <span>{{ race.country }}</span>
+          <span class="country-cell">
+            <img v-if="race.countryFlag" :src="race.countryFlag" :alt="race.country" class="flag" />
+            {{ race.country }}
+          </span>
           <span>{{ race.date }}</span>
         </div>
       </div>
@@ -39,8 +42,16 @@
       </div>
 
       <OverviewTab v-if="tab === 'result'" />
+      <SessionResultTab
+        v-else-if="tab === 'qualifying'"
+        :sessions="[{ name: 'Qualifying', result: race.qualifyingResult }]"
+      />
+      <SessionResultTab
+        v-else-if="tab === 'practice'"
+        :sessions="race.practiceResults"
+      />
       <RaceDrivers v-else-if="tab === 'drivers'" :result="race.result" />
-      <RaceTeams v-else :result="race.result" />
+      <RaceTeams v-else-if="tab === 'teams'" :result="race.result" />
     </template>
   </div>
 </template>
@@ -51,8 +62,9 @@ import { useSeasonStore } from '@/stores/seasonStore'
 import OverviewTab from './tabs/OverviewTab.vue'
 import RaceDrivers from './tabs/RaceDrivers.vue'
 import RaceTeams from './tabs/RaceTeams.vue'
+import SessionResultTab from './tabs/SessionResultTab.vue'
 
-type RTab = 'result' | 'drivers' | 'teams'
+type RTab = 'result' | 'qualifying' | 'practice' | 'drivers' | 'teams'
 
 const emit = defineEmits<{ back: [] }>()
 const store = useSeasonStore()
@@ -65,11 +77,13 @@ const trackImageUrl = computed(() => {
   return race.value.circuitImage ?? ''
 })
 
-const tabs: { key: RTab; label: string }[] = [
-  { key: 'result', label: 'ERGEBNIS' },
-  { key: 'drivers', label: 'FAHRER' },
-  { key: 'teams', label: 'TEAMS' },
-]
+const tabs = computed(() => {
+  const t: { key: RTab; label: string }[] = [{ key: 'result', label: 'ERGEBNIS' }]
+  if (race.value?.qualifyingResult?.length) t.push({ key: 'qualifying', label: 'QUALIFYING' })
+  if (race.value?.practiceResults?.length) t.push({ key: 'practice', label: 'TRAINING' })
+  t.push({ key: 'drivers', label: 'FAHRER' }, { key: 'teams', label: 'TEAMS' })
+  return t
+})
 
 watch(
   () => store.selectedRaceIndex,
@@ -132,6 +146,20 @@ watch(
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.06em;
+}
+
+.country-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flag {
+  width: 22px;
+  height: 14px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .back-link {

@@ -47,9 +47,20 @@ public class SeasonService {
                             int pos, int pts, String gapText, boolean dnf,
                             boolean dns, boolean dsq, Integer laps) {}
 
+    /** Zeile im Quali-/Trainingsergebnis */
+    public record SessionResultRow(String abbr, String name, String team, String color,
+                                   int pos, String bestLap, String gap,
+                                   boolean dnf, boolean dns, boolean dsq) {}
+
+    /** Eine Trainingseinheit mit Namen (z.B. "Practice 1") und Ergebnissen */
+    public record PracticeSession(String name, List<SessionResultRow> result) {}
+
     public record Race(String gp, String country, String circuit, double lat, double lon,
                        String date, int round, boolean completed,
-                       List<ResultRow> result, ResultRow fastestLap, String circuitImage) {}
+                       List<ResultRow> result, ResultRow fastestLap,
+                       String circuitImage, String countryFlag,
+                       List<SessionResultRow> qualifyingResult,
+                       List<PracticeSession> practiceResults) {}
 
     /** cum = kumulierte Punkte nach jedem Rennen (wird für den Punkteverlauf-Chart genutzt) */
     public record DriverStanding(String abbr, String name, String team, int num, String color,
@@ -61,7 +72,7 @@ public class SeasonService {
                                List<DriverStanding> drivers) {}
 
     public record SeasonStats(List<Race> races, List<DriverStanding> drivers,
-                              List<TeamStanding> teams, boolean loading) {}
+                              List<TeamStanding> teams, boolean loading, int totalRaces) {}
 
     // --- Konfiguration ---
 
@@ -169,7 +180,7 @@ public class SeasonService {
         }
 
         // Frontend pollt alle 6 Sekunden und bekommt solange loading:true
-        return new SeasonStats(List.of(), List.of(), List.of(), true);
+        return new SeasonStats(List.of(), List.of(), List.of(), true, 0);
     }
 
     /**
@@ -192,7 +203,7 @@ public class SeasonService {
         }
     }
 
-    /** Semaphore sicherstellen: nur 1 Saison gleichzeitig am API-Abrufen */
+    /** Sicherstellen: nur 1 Saison gleichzeitig am API-Abrufen */
     private void buildAndCache(int year) {
         try {
             API_SLOT.acquire();
@@ -209,20 +220,35 @@ public class SeasonService {
 
     /**
      * Aggregiert eine komplette Saison aus der OpenF1-API.
-     * Kosten: 1 (Meetings) + 1 (Sessions) + 1 (Fahrer) + N (Rennergebnisse) API-Calls.
-     * Bei 24 Rennen: ~27 Calls × 2,5 s = ca. 68 Sekunden.
+     * Kosten: 1 (Meetings) + 1 (Sessions) + 1 (Fahrer) + K×(1 Race + 1 Quali + 3 Practice) API-Calls.
+     * K = nur abgeschlossene Rennen. Bei 10 fertigen Rennen: ~53 Calls × 2,5 s = ca. 2 Minuten.
      */
     private void buildAndCacheInternal(int year) {
-        // Schritt 1a: Meetings laden → circuit_image URL pro location (1 API-Call)
+        // Schritt 1a: Meetings laden → circuit_image + country_flag pro location (1 API-Call)
         Map<String, String> circuitImages = new LinkedHashMap<>();
+        Map<String, String> countryFlags = new LinkedHashMap<>();
         for (OpenF1MeetingDto m : fetch(() -> openF1Client.getMeetings(year))) {
-            if (m.location() != null && m.circuitImage() != null) {
-                circuitImages.put(m.location(), m.circuitImage());
+            if (m.location() == null) continue;
+            if (m.circuitImage() != null) circuitImages.put(m.location(), m.circuitImage());
+            if (m.countryFlag() != null) countryFlags.put(m.location(), m.countryFlag());
+        }
+
+        // Schritt 1b: Alle Sessions des Jahres laden, nach Typ gruppieren
+        List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
+
+        // Quali- und Trainings-Sessions nach meeting_key gruppieren
+        Map<Integer, Integer> qualiByMeeting = new LinkedHashMap<>();
+        Map<Integer, List<OpenF1SessionDto>> practicesByMeeting = new LinkedHashMap<>();
+        for (OpenF1SessionDto s : sessions) {
+            if (s.sessionKey() == null || s.meetingKey() == null) continue;
+            String name = s.sessionName();
+            if ("Qualifying".equals(name) || "Sprint Qualifying".equals(name) || "Sprint Shootout".equals(name)) {
+                qualiByMeeting.put(s.meetingKey(), s.sessionKey());
+            } else if (name != null && name.startsWith("Practice")) {
+                practicesByMeeting.computeIfAbsent(s.meetingKey(), k -> new ArrayList<>()).add(s);
             }
         }
 
-        // Schritt 1b: Alle Sessions des Jahres laden, nur Rennen herausfiltern
-        List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
         List<OpenF1SessionDto> raceSessions = sessions.stream()
                 .filter(s -> s.sessionKey() != null && "Race".equals(s.sessionName()))
                 .sorted(Comparator.comparing(s -> s.dateStart() == null ? "" : s.dateStart()))
@@ -297,6 +323,21 @@ public class SeasonService {
 
             double[] cc = COORDS.getOrDefault(orElse(rs.location(), orElse(rs.circuitShortName(), "")), new double[]{0, 0});
             String imgUrl = circuitImages.getOrDefault(rs.location(), null);
+            String flagUrl = countryFlags.getOrDefault(rs.location(), null);
+
+            // Qualifying + Training nur für abgeschlossene Rennen laden (keine Calls für Zukunft)
+            List<SessionResultRow> qualifyingResult = List.of();
+            List<PracticeSession> practiceResults = List.of();
+            if (completed) {
+                Integer qualiKey = rs.meetingKey() != null ? qualiByMeeting.get(rs.meetingKey()) : null;
+                if (qualiKey != null) qualifyingResult = buildSessionRows(qualiKey, byNum, true);
+
+                practiceResults = new ArrayList<>();
+                for (OpenF1SessionDto p : practicesByMeeting.getOrDefault(rs.meetingKey(), List.of())) {
+                    practiceResults.add(new PracticeSession(p.sessionName(), buildSessionRows(p.sessionKey(), byNum, false)));
+                }
+            }
+
             ResultRow fastest = result.isEmpty() ? null : result.get(0);
             races.add(new Race(
                     orElse(rs.location(), orElse(rs.circuitShortName(), "GP")),
@@ -304,7 +345,11 @@ public class SeasonService {
                     orElse(rs.circuitShortName(), "—"),
                     cc[0], cc[1],
                     rs.dateStart() == null ? "" : rs.dateStart().substring(0, Math.min(10, rs.dateStart().length())),
-                    round, completed, result, fastest, imgUrl));
+                    round, completed, result, fastest, imgUrl, flagUrl, qualifyingResult, practiceResults));
+
+            // Bereits geladene Rennen sofort im RAM-Cache verfügbar machen (loading:true)
+            // → Frontend sieht die Daten beim nächsten Poll (alle 6s), ohne auf das Ende zu warten
+            cache.put(year, new SeasonStats(List.copyOf(races), List.of(), List.of(), true, raceSessions.size()));
         }
 
         // Schritt 4: Fahrer- und Konstrukteurswertung berechnen
@@ -334,7 +379,7 @@ public class SeasonService {
         teams.sort(Comparator.comparingInt(TeamStanding::points).reversed());
 
         // Nur speichern wenn Daten vorhanden (verhindert leere Cache-Einträge bei API-Fehlern)
-        SeasonStats stats = new SeasonStats(races, drivers, teams, false);
+        SeasonStats stats = new SeasonStats(races, drivers, teams, false, races.size());
         if (!races.isEmpty()) {
             cache.put(year, stats);
             cacheStore.save(year, stats);
@@ -401,8 +446,8 @@ public class SeasonService {
     private static String gapText(int pos, boolean out, OpenF1ResultDto r) {
         if (out) return "—";
         if (pos == 1) {
-            if (r.duration() == null) return "—";
-            double t = r.duration();
+            Double t = extractLastDouble(r.duration());
+            if (t == null) return "—";
             int h = (int) (t / 3600);
             int m = (int) ((t % 3600) / 60);
             String sec = String.format(Locale.US, "%06.3f", t % 60);
@@ -412,6 +457,54 @@ public class SeasonService {
         if (g instanceof Number num) return "+" + String.format(Locale.US, "%.3f", num.doubleValue()) + "s";
         if (g instanceof String s && !s.isBlank()) return s;
         return "—";
+    }
+
+    /** Extrahiert den letzten numerischen Wert aus einem Object (Number oder List) */
+    private static Double extractLastDouble(Object val) {
+        if (val instanceof Number n) return n.doubleValue();
+        if (val instanceof List<?> list && !list.isEmpty()) {
+            Object last = list.get(list.size() - 1);
+            if (last instanceof Number n) return n.doubleValue();
+        }
+        return null;
+    }
+
+    private static String formatLapTime(Double sec) {
+        if (sec == null) return "—";
+        int m = (int) (sec / 60);
+        return m + ":" + String.format(Locale.US, "%06.3f", sec % 60);
+    }
+
+    /** Lädt Ergebniszeilen für eine Session und nutzt den bereits geladenen Fahrer-Map. */
+    private List<SessionResultRow> buildSessionRows(int sessionKey, Map<Integer, Accum> byNum, boolean isQualifying) {
+        List<SessionResultRow> rows = new ArrayList<>();
+        for (OpenF1ResultDto r : fetch(() -> openF1Client.getResults(sessionKey))) {
+            if (r.position() == null || r.driverNumber() == null) continue;
+            Accum a = byNum.get(r.driverNumber());
+            String abbr  = a != null ? a.abbr  : "#" + r.driverNumber();
+            String name  = a != null ? a.name  : "#" + r.driverNumber();
+            String team  = a != null ? a.team  : "—";
+            String color = a != null ? a.color : "#888888";
+
+            boolean dnf = Boolean.TRUE.equals(r.dnf());
+            boolean dns = Boolean.TRUE.equals(r.dns());
+            boolean dsq = Boolean.TRUE.equals(r.dsq());
+            boolean out = dnf || dns || dsq;
+
+            String bestLap = out ? "—" : formatLapTime(extractLastDouble(r.duration()));
+            String gap = "—";
+            if (!out) {
+                if (r.position() == 1) {
+                    gap = isQualifying ? "POLE" : "—";
+                } else {
+                    Double g = extractLastDouble(r.gapToLeader());
+                    if (g != null && g > 0) gap = "+" + String.format(Locale.US, "%.3f", g) + "s";
+                }
+            }
+            rows.add(new SessionResultRow(abbr, name, team, color, r.position(), bestLap, gap, dnf, dns, dsq));
+        }
+        rows.sort(Comparator.comparingInt(SessionResultRow::pos));
+        return rows;
     }
 
     private static String orElse(String v, String fallback) {

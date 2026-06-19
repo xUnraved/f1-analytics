@@ -7,5 +7,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record OpenF1MeetingDto(
         @JsonProperty("meeting_key") Integer meetingKey,
         @JsonProperty("location") String location,
-        @JsonProperty("circuit_image") String circuitImage
+        @JsonProperty("circuit_image") String circuitImage,
+        @JsonProperty("country_flag") String countryFlag
 ) {}

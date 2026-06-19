@@ -1,6 +1,6 @@
 #FileLock
-#Fri Jun 19 13:50:21 CEST 2026
-hostName=DESKTOP-U37JNAL.fritz.box
-id=19edfb7bc2571bbc72b25a3436e57c4182f5f75d946
+#Fri Jun 19 18:41:14 CEST 2026
+hostName=141.45.44.100
+id=19ee0c20d1480ffa7856cf2be77a6995d08d83d2413
 method=file
-server=192.168.178.23\:53004
+server=141.45.44.100\:57610

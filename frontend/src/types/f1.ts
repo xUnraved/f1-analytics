@@ -19,6 +19,24 @@ export interface RaceResultRow {
   laps: number | null
 }
 
+export interface SessionResultRow {
+  abbr: string
+  name: string
+  team: string
+  color: string
+  pos: number
+  bestLap: string
+  gap: string
+  dnf: boolean
+  dns: boolean
+  dsq: boolean
+}
+
+export interface PracticeSession {
+  name: string
+  result: SessionResultRow[]
+}
+
 export interface Race {
   gp: string
   country: string
@@ -31,6 +49,9 @@ export interface Race {
   result: RaceResultRow[]
   fastestLap: RaceResultRow | null
   circuitImage: string | null
+  countryFlag: string | null
+  qualifyingResult: SessionResultRow[]
+  practiceResults: PracticeSession[]
 }
 
 export interface DriverStanding extends Driver {
@@ -58,4 +79,5 @@ export interface SeasonStats {
   drivers: DriverStanding[]
   teams: TeamStanding[]
   loading: boolean
+  totalRaces: number
 }

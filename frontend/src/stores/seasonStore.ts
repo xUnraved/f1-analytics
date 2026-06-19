@@ -16,6 +16,7 @@ export const useSeasonStore = defineStore('season', () => {
   const races = computed<Race[]>(() => stats.value?.races ?? [])
   const drivers = computed<DriverStanding[]>(() => stats.value?.drivers ?? [])
   const teams = computed<TeamStanding[]>(() => stats.value?.teams ?? [])
+  const totalRaces = computed<number>(() => stats.value?.totalRaces ?? 0)
   const selectedRace = computed<Race | null>(() =>
     selectedRaceIndex.value === null ? null : (races.value[selectedRaceIndex.value] ?? null),
   )
@@ -94,6 +95,7 @@ export const useSeasonStore = defineStore('season', () => {
     year,
     stats,
     races,
+    totalRaces,
     drivers,
     teams,
     selectedRaceIndex,
