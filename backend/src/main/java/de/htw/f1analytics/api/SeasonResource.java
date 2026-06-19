@@ -2,6 +2,7 @@ package de.htw.f1analytics.api;
 
 import de.htw.f1analytics.service.SeasonService;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -28,5 +29,11 @@ public class SeasonResource {
     @Produces(MediaType.APPLICATION_JSON)
     public SeasonService.SeasonStats season(@QueryParam("year") int year) {
         return seasonService.seasonStats(year);
+    }
+
+    @DELETE
+    @Path("/season/cache")
+    public void clearCache(@QueryParam("year") int year) {
+        seasonService.clearCache(year);
     }
 }

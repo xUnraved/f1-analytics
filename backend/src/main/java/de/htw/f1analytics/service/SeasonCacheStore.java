@@ -30,6 +30,12 @@ public class SeasonCacheStore {
     }
 
     @Transactional
+    public void delete(int year) {
+        SeasonCacheEntity e = SeasonCacheEntity.findById(year);
+        if (e != null) e.delete();
+    }
+
+    @Transactional
     public void save(int year, SeasonService.SeasonStats stats) {
         try {
             String json = mapper.writeValueAsString(stats);

@@ -23,4 +23,8 @@ public interface OpenF1Client {
     @GET
     @Path("/drivers")
     List<OpenF1DriverDto> getDrivers(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/meetings")
+    List<OpenF1MeetingDto> getMeetings(@QueryParam("year") int year);
 }

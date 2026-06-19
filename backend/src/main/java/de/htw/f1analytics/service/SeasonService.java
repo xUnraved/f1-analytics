@@ -2,6 +2,7 @@ package de.htw.f1analytics.service;
 
 import de.htw.f1analytics.client.OpenF1Client;
 import de.htw.f1analytics.client.OpenF1DriverDto;
+import de.htw.f1analytics.client.OpenF1MeetingDto;
 import de.htw.f1analytics.client.OpenF1ResultDto;
 import de.htw.f1analytics.client.OpenF1SessionDto;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,7 +49,7 @@ public class SeasonService {
 
     public record Race(String gp, String country, String circuit, double lat, double lon,
                        String date, int round, boolean completed,
-                       List<ResultRow> result, ResultRow fastestLap) {}
+                       List<ResultRow> result, ResultRow fastestLap, String circuitImage) {}
 
     /** cum = kumulierte Punkte nach jedem Rennen (wird für den Punkteverlauf-Chart genutzt) */
     public record DriverStanding(String abbr, String name, String team, int num, String color,
@@ -127,6 +128,11 @@ public class SeasonService {
         final List<Integer> cum = new ArrayList<>();
     }
 
+    public void clearCache(int year) {
+        cache.remove(year);
+        cacheStore.delete(year);
+    }
+
     public List<Integer> years() {
         int cur = Year.now().getValue();
         List<Integer> ys = new ArrayList<>();
@@ -203,11 +209,19 @@ public class SeasonService {
 
     /**
      * Aggregiert eine komplette Saison aus der OpenF1-API.
-     * Kosten: 1 (Sessions) + 1 (Fahrer) + N (Rennergebnisse) API-Calls.
-     * Bei 24 Rennen: ~26 Calls × 2,5 s = ca. 65 Sekunden.
+     * Kosten: 1 (Meetings) + 1 (Sessions) + 1 (Fahrer) + N (Rennergebnisse) API-Calls.
+     * Bei 24 Rennen: ~27 Calls × 2,5 s = ca. 68 Sekunden.
      */
     private void buildAndCacheInternal(int year) {
-        // Schritt 1: Alle Sessions des Jahres laden, nur Rennen herausfiltern
+        // Schritt 1a: Meetings laden → circuit_image URL pro location (1 API-Call)
+        Map<String, String> circuitImages = new LinkedHashMap<>();
+        for (OpenF1MeetingDto m : fetch(() -> openF1Client.getMeetings(year))) {
+            if (m.location() != null && m.circuitImage() != null) {
+                circuitImages.put(m.location(), m.circuitImage());
+            }
+        }
+
+        // Schritt 1b: Alle Sessions des Jahres laden, nur Rennen herausfiltern
         List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
         List<OpenF1SessionDto> raceSessions = sessions.stream()
                 .filter(s -> s.sessionKey() != null && "Race".equals(s.sessionName()))
@@ -282,6 +296,7 @@ public class SeasonService {
             for (Accum a : byNum.values()) a.cum.add(a.points);
 
             double[] cc = COORDS.getOrDefault(orElse(rs.location(), orElse(rs.circuitShortName(), "")), new double[]{0, 0});
+            String imgUrl = circuitImages.getOrDefault(rs.location(), null);
             ResultRow fastest = result.isEmpty() ? null : result.get(0);
             races.add(new Race(
                     orElse(rs.location(), orElse(rs.circuitShortName(), "GP")),
@@ -289,7 +304,7 @@ public class SeasonService {
                     orElse(rs.circuitShortName(), "—"),
                     cc[0], cc[1],
                     rs.dateStart() == null ? "" : rs.dateStart().substring(0, Math.min(10, rs.dateStart().length())),
-                    round, completed, result, fastest));
+                    round, completed, result, fastest, imgUrl));
         }
 
         // Schritt 4: Fahrer- und Konstrukteurswertung berechnen

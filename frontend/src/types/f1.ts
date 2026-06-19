@@ -30,6 +30,7 @@ export interface Race {
   completed: boolean
   result: RaceResultRow[]
   fastestLap: RaceResultRow | null
+  circuitImage: string | null
 }
 
 export interface DriverStanding extends Driver {

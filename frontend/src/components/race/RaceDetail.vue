@@ -1,9 +1,18 @@
 <template>
   <div v-if="race">
     <div class="race-head">
-      <div>
+      <div class="race-head-left">
         <span class="eyebrow round">Runde {{ String(race.round).padStart(2, '0') }}</span>
-        <h2 class="race-title">{{ race.gp.toUpperCase() }}</h2>
+        <div class="title-row">
+          <h2 class="race-title">{{ race.gp.toUpperCase() }}</h2>
+          <img
+            v-if="trackImageUrl"
+            :src="trackImageUrl"
+            :alt="race.gp + ' Streckenkarte'"
+            class="track-map"
+            @error="trackImgError = true"
+          />
+        </div>
         <div class="race-sub">
           <span>{{ race.circuit }}</span>
           <span>{{ race.country }}</span>
@@ -49,6 +58,12 @@ const emit = defineEmits<{ back: [] }>()
 const store = useSeasonStore()
 const race = computed(() => store.selectedRace)
 const tab = ref<RTab>('result')
+const trackImgError = ref(false)
+
+const trackImageUrl = computed(() => {
+  if (trackImgError.value || !race.value) return ''
+  return race.value.circuitImage ?? ''
+})
 
 const tabs: { key: RTab; label: string }[] = [
   { key: 'result', label: 'ERGEBNIS' },
@@ -60,6 +75,7 @@ watch(
   () => store.selectedRaceIndex,
   () => {
     tab.value = 'result'
+    trackImgError.value = false
   },
 )
 </script>
@@ -72,6 +88,26 @@ watch(
   align-items: flex-end;
   gap: 18px;
   margin-bottom: 26px;
+}
+
+.race-head-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.track-map {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  opacity: 0.6;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 .round {
