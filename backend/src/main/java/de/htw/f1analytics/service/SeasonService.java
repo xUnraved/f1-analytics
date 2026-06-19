@@ -22,6 +22,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
+/**
+ * Kernservice: aggregiert OpenF1-Rohdaten zu fertigen Saisonstatistiken.
+ *
+ * Ablauf für eine neue Saison:
+ *  1. seasonStats() wird vom REST-Endpoint aufgerufen
+ *  2. RAM-Cache → H2-Datenbank → Background-Thread (in dieser Reihenfolge)
+ *  3. Solange der Thread läuft, gibt seasonStats() loading:true zurück
+ *  4. Das Frontend pollt alle 6 Sekunden, bis loading:false kommt
+ */
 @ApplicationScoped
 public class SeasonService {
 
@@ -31,6 +40,8 @@ public class SeasonService {
     @Inject
     SeasonCacheStore cacheStore;
 
+    // --- Datenmodell (wird als JSON ans Frontend gesendet) ---
+
     public record ResultRow(String abbr, String name, String team, String color,
                             int pos, int pts, String gapText, boolean dnf,
                             boolean dns, boolean dsq, Integer laps) {}
@@ -39,6 +50,7 @@ public class SeasonService {
                        String date, int round, boolean completed,
                        List<ResultRow> result, ResultRow fastestLap) {}
 
+    /** cum = kumulierte Punkte nach jedem Rennen (wird für den Punkteverlauf-Chart genutzt) */
     public record DriverStanding(String abbr, String name, String team, int num, String color,
                                  int points, int wins, int podiums, int dnf,
                                  List<Integer> finishes, List<Integer> cum,
@@ -50,14 +62,21 @@ public class SeasonService {
     public record SeasonStats(List<Race> races, List<DriverStanding> drivers,
                               List<TeamStanding> teams, boolean loading) {}
 
+    // --- Konfiguration ---
+
     static final int START_YEAR = 2023;
     private static final int[] POINTS = {25, 18, 15, 12, 10, 8, 6, 4, 2, 1};
+    /** Pause zwischen API-Calls: 2500 ms = max 24 Requests/Min (Limit: 30/Min) */
     private static final long THROTTLE_MS = 2500;
     private static final int MAX_RETRY = 4;
 
+    // --- Zustand ---
+
+    /** RAM-Cache: überlebt keinen Neustart, wird beim Start aus H2 befüllt */
     private final Map<Integer, SeasonStats> cache = new ConcurrentHashMap<>();
+    /** Verhindert, dass für dasselbe Jahr mehrere Threads gestartet werden */
     private final java.util.Set<Integer> fetching = ConcurrentHashMap.newKeySet();
-    // Global 1-permit semaphore: only one year fetches OpenF1 at a time to stay under rate limit
+    /** Nur 1 Jahr darf gleichzeitig die OpenF1-API abfragen → Rate-Limit einhalten */
     private static final Semaphore API_SLOT = new Semaphore(1);
 
     private static final Map<String, double[]> COORDS = Map.ofEntries(
@@ -115,31 +134,42 @@ public class SeasonService {
         return ys;
     }
 
+    /**
+     * Haupt-Einstiegspunkt für den REST-Endpoint.
+     * Gibt sofort zurück: entweder gecachte Daten oder loading:true.
+     * Wenn weder RAM noch DB etwas haben, startet ein virtueller Thread im Hintergrund.
+     */
     public SeasonStats seasonStats(int year) {
+        // 1. RAM-Cache (schnellster Pfad, kein I/O)
         SeasonStats cached = cache.get(year);
         if (cached != null) return cached;
 
+        // 2. H2-Datenbank (überlebt Neustarts)
         SeasonStats fromDb = cacheStore.load(year);
         if (fromDb != null) {
             cache.put(year, fromDb);
             return fromDb;
         }
 
-        // Hintergrund-Fetch starten (nur einmal pro Jahr)
+        // 3. Noch nicht vorhanden → Background-Thread starten (nur einmal pro Jahr)
         if (fetching.add(year)) {
             Thread.ofVirtual().name("season-fetch-" + year).start(() -> {
                 try {
                     buildAndCache(year);
                 } finally {
-                    fetching.remove(year);
+                    fetching.remove(year); // Thread freigeben, damit spätere Versuche möglich sind
                 }
             });
         }
 
+        // Frontend pollt alle 6 Sekunden und bekommt solange loading:true
         return new SeasonStats(List.of(), List.of(), List.of(), true);
     }
 
-    /** Blocking version for use by CacheWarmer — loads from DB/cache or fetches synchronously. */
+    /**
+     * Blockierende Variante für den CacheWarmer beim Start.
+     * Kehrt erst zurück, wenn die Daten vollständig geladen sind.
+     */
     public void ensureCached(int year) {
         if (cache.containsKey(year)) return;
         SeasonStats fromDb = cacheStore.load(year);
@@ -156,6 +186,7 @@ public class SeasonService {
         }
     }
 
+    /** Semaphore sicherstellen: nur 1 Saison gleichzeitig am API-Abrufen */
     private void buildAndCache(int year) {
         try {
             API_SLOT.acquire();
@@ -170,17 +201,24 @@ public class SeasonService {
         }
     }
 
+    /**
+     * Aggregiert eine komplette Saison aus der OpenF1-API.
+     * Kosten: 1 (Sessions) + 1 (Fahrer) + N (Rennergebnisse) API-Calls.
+     * Bei 24 Rennen: ~26 Calls × 2,5 s = ca. 65 Sekunden.
+     */
     private void buildAndCacheInternal(int year) {
+        // Schritt 1: Alle Sessions des Jahres laden, nur Rennen herausfiltern
         List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
-
         List<OpenF1SessionDto> raceSessions = sessions.stream()
                 .filter(s -> s.sessionKey() != null && "Race".equals(s.sessionName()))
                 .sorted(Comparator.comparing(s -> s.dateStart() == null ? "" : s.dateStart()))
                 .toList();
 
+        // byNum sammelt Fahrerdaten über alle Rennen hinweg (Schlüssel = Startnummer)
         Map<Integer, Accum> byNum = new LinkedHashMap<>();
 
-        // One driver-info call: use the most recent race session so we get current team/color data
+        // Schritt 2: Fahrernamen + Teamfarben einmalig aus der letzten Session laden
+        // (aktuellste Session = aktuellste Team-Zuordnung nach möglichen Wechseln)
         if (!raceSessions.isEmpty()) {
             OpenF1SessionDto refSession = raceSessions.get(raceSessions.size() - 1);
             for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(refSession.sessionKey()))) {
@@ -198,6 +236,7 @@ public class SeasonService {
         List<Race> races = new ArrayList<>();
         int round = 0;
 
+        // Schritt 3: Pro Rennen Ergebnisse laden und Punkte akkumulieren
         for (OpenF1SessionDto rs : raceSessions) {
             List<OpenF1ResultDto> rows = fetch(() -> openF1Client.getResults(rs.sessionKey())).stream()
                     .filter(r -> r.position() != null && r.driverNumber() != null)
@@ -207,13 +246,11 @@ public class SeasonService {
             List<ResultRow> result = new ArrayList<>();
             for (OpenF1ResultDto r : rows) {
                 int num = r.driverNumber();
+                // Fallback: Fahrer ohne Daten aus Schritt 2 (z.B. Einspringer)
                 Accum a = byNum.computeIfAbsent(num, k -> {
                     Accum x = new Accum();
-                    x.num = num;
-                    x.abbr = "#" + num;
-                    x.name = "#" + num;
-                    x.team = "—";
-                    x.color = "#888888";
+                    x.num = num; x.abbr = "#" + num; x.name = "#" + num;
+                    x.team = "—"; x.color = "#888888";
                     return x;
                 });
                 int pos = r.position();
@@ -237,9 +274,11 @@ public class SeasonService {
             boolean completed = !result.isEmpty();
             LocalDate d = parseDate(rs.dateStart());
             boolean future = d == null || !d.isBefore(today);
+            // Vergangene Rennen ohne Ergebnis überspringen (z.B. abgesagte Rennen)
             if (!completed && !future) continue;
 
             round++;
+            // Kumulierte Punkte nach diesem Rennen für jeden Fahrer speichern (→ Chart)
             for (Accum a : byNum.values()) a.cum.add(a.points);
 
             double[] cc = COORDS.getOrDefault(orElse(rs.location(), orElse(rs.circuitShortName(), "")), new double[]{0, 0});
@@ -253,6 +292,7 @@ public class SeasonService {
                     round, completed, result, fastest));
         }
 
+        // Schritt 4: Fahrer- und Konstrukteurswertung berechnen
         List<DriverStanding> drivers = new ArrayList<>();
         for (Accum a : byNum.values()) {
             Double avg = a.finishes.isEmpty() ? null
@@ -265,10 +305,10 @@ public class SeasonService {
         }
         drivers.sort(Comparator.comparingInt(DriverStanding::points).reversed());
 
+        // Konstrukteurswertung: Fahrer nach Team gruppieren, Punkte summieren
         Map<String, List<DriverStanding>> byTeam = new LinkedHashMap<>();
-        for (DriverStanding d : drivers) {
-            byTeam.computeIfAbsent(d.team(), k -> new ArrayList<>()).add(d);
-        }
+        for (DriverStanding d : drivers) byTeam.computeIfAbsent(d.team(), k -> new ArrayList<>()).add(d);
+
         List<TeamStanding> teams = new ArrayList<>();
         for (Map.Entry<String, List<DriverStanding>> e : byTeam.entrySet()) {
             int pts = e.getValue().stream().mapToInt(DriverStanding::points).sum();
@@ -278,6 +318,7 @@ public class SeasonService {
         }
         teams.sort(Comparator.comparingInt(TeamStanding::points).reversed());
 
+        // Nur speichern wenn Daten vorhanden (verhindert leere Cache-Einträge bei API-Fehlern)
         SeasonStats stats = new SeasonStats(races, drivers, teams, false);
         if (!races.isEmpty()) {
             cache.put(year, stats);
@@ -285,6 +326,13 @@ public class SeasonService {
         }
     }
 
+    /**
+     * Einzelner API-Aufruf mit Throttle und Retry.
+     * Wartet THROTTLE_MS vor jedem Versuch (→ max. 24 req/min, Limit: 30/min).
+     * Bei 429 (Rate-Limit): 65 Sekunden warten, dann erneut versuchen.
+     * Bei 5xx oder Netzwerkfehler: exponentielles Backoff, max MAX_RETRY Versuche.
+     * Gibt bei dauerhaftem Fehler eine leere Liste zurück statt Exception zu werfen.
+     */
     private <T> List<T> fetch(Supplier<List<T>> call) {
         int attempts = 0;
         while (true) {
