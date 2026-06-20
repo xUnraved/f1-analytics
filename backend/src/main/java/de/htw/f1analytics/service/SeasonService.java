@@ -283,10 +283,28 @@ public class SeasonService {
                     .sorted(Comparator.comparingInt(OpenF1ResultDto::position))
                     .toList();
 
+            // Einspringer: Fahrernummern die nicht in byNum sind → Fahrerdaten dieser Session nachladen
+            java.util.Set<Integer> unknownNums = new java.util.HashSet<>();
+            for (OpenF1ResultDto r : rows) {
+                if (r.driverNumber() != null && !byNum.containsKey(r.driverNumber())) {
+                    unknownNums.add(r.driverNumber());
+                }
+            }
+            if (!unknownNums.isEmpty()) {
+                for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(rs.sessionKey()))) {
+                    if (d.driverNumber() == null || !unknownNums.contains(d.driverNumber())) continue;
+                    Accum a = byNum.computeIfAbsent(d.driverNumber(), k -> new Accum());
+                    a.num = d.driverNumber();
+                    a.abbr = orElse(d.nameAcronym(), "#" + d.driverNumber());
+                    a.name = orElse(d.fullName(), a.abbr);
+                    a.team = orElse(d.teamName(), "—");
+                    a.color = d.teamColour() != null ? "#" + d.teamColour() : "#888888";
+                }
+            }
+
             List<ResultRow> result = new ArrayList<>();
             for (OpenF1ResultDto r : rows) {
                 int num = r.driverNumber();
-                // Fallback: Fahrer ohne Daten aus Schritt 2 (z.B. Einspringer)
                 Accum a = byNum.computeIfAbsent(num, k -> {
                     Accum x = new Accum();
                     x.num = num; x.abbr = "#" + num; x.name = "#" + num;
