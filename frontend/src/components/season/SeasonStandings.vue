@@ -1,4 +1,4 @@
-<template>
+ <template>
   <div class="standings-wrap">
     <!-- Loading -->
     <div v-if="store.loading" class="state-msg">Daten werden geladen …</div>

@@ -5,6 +5,18 @@ export interface Driver {
   num: number
 }
 
+/** F1alytics Score – Komponenten-Karte eines Fahrers in einem Rennen */
+export interface ScoreCard {
+  score: number // Endwert 1–10
+  q: number // Qualifying-Teil 0–10
+  r: number // Ergebnis-Teil 0–10
+  delta: number // Positionsveränderung-Teil 0–10
+  base: number // gewichtete Basis vor Modifikatoren
+  modifiers: number // Summe der Modifikatoren
+  dnf: boolean
+  note: string
+}
+
 export interface RaceResultRow {
   abbr: string
   name: string
@@ -17,6 +29,7 @@ export interface RaceResultRow {
   dns: boolean
   dsq: boolean
   laps: number | null
+  score: ScoreCard | null
 }
 
 export interface SessionResultRow {
@@ -64,6 +77,8 @@ export interface DriverStanding extends Driver {
   cum: number[]
   avgFinish: number | null
   bestFinish: number | null
+  avgScore: number | null
+  scoreHistory: number[]
 }
 
 export interface TeamStanding {

@@ -2,45 +2,47 @@
   <div class="table-wrap">
     <table class="standings">
       <thead>
-        <tr>
-          <th class="col-pos">POS</th>
-          <th class="col-driver">FAHRER</th>
-          <th class="col-team">TEAM</th>
-          <th class="col-num">PTS</th>
-          <th class="col-num">SIEGE</th>
-          <th class="col-num">PODESTE</th>
-          <th class="col-num hide-sm">DNF</th>
-          <th class="col-gap hide-sm">LETZTES</th>
-        </tr>
+      <tr>
+        <th class="col-pos">POS</th>
+        <th class="col-driver">FAHRER</th>
+        <th class="col-team">TEAM</th>
+        <th class="col-num">PTS</th>
+        <th class="col-num">SIEGE</th>
+        <th class="col-num">PODESTE</th>
+        <th class="col-num hide-sm">DNF</th>
+        <th class="col-score">F1ALYTICS Ø</th>
+        <th class="col-gap hide-sm">LETZTES</th>
+      </tr>
       </thead>
       <tbody>
-        <tr
-          v-for="(d, i) in store.drivers"
-          :key="d.abbr"
-          class="row"
-          :class="rowClass(i)"
-        >
-          <td>
-            <span class="pos-badge" :class="posBadgeClass(i)">{{ i + 1 }}</span>
-          </td>
-          <td>
-            <div class="driver-cell">
-              <span class="team-stripe" :style="{ background: d.color }"></span>
-              <div>
-                <div class="driver-name">{{ d.name }}</div>
-                <div class="driver-abbr">{{ d.abbr }} · #{{ d.num }}</div>
-              </div>
+      <tr
+        v-for="(d, i) in store.drivers"
+        :key="d.abbr"
+        class="row"
+        :class="rowClass(i)"
+      >
+        <td>
+          <span class="pos-badge" :class="posBadgeClass(i)">{{ i + 1 }}</span>
+        </td>
+        <td>
+          <div class="driver-cell">
+            <span class="team-stripe" :style="{ background: d.color }"></span>
+            <div>
+              <div class="driver-name">{{ d.name }}</div>
+              <div class="driver-abbr">{{ d.abbr }} · #{{ d.num }}</div>
             </div>
-          </td>
-          <td class="cell-team">{{ d.team }}</td>
-          <td class="cell-pts">{{ d.points }}</td>
-          <td class="cell-num">{{ d.wins }}</td>
-          <td class="cell-num">{{ d.podiums }}</td>
-          <td class="cell-num hide-sm">{{ d.dnf }}</td>
-          <td class="cell-gap hide-sm">
-            {{ d.finishes.length ? 'P' + d.finishes[d.finishes.length - 1] : '—' }}
-          </td>
-        </tr>
+          </div>
+        </td>
+        <td class="cell-team">{{ d.team }}</td>
+        <td class="cell-pts">{{ d.points }}</td>
+        <td class="cell-num">{{ d.wins }}</td>
+        <td class="cell-num">{{ d.podiums }}</td>
+        <td class="cell-num hide-sm">{{ d.dnf }}</td>
+        <td class="cell-score"><ScoreBadge :value="d.avgScore" /></td>
+        <td class="cell-gap hide-sm">
+          {{ d.finishes.length ? 'P' + d.finishes[d.finishes.length - 1] : '—' }}
+        </td>
+      </tr>
       </tbody>
     </table>
   </div>
@@ -48,6 +50,7 @@
 
 <script setup lang="ts">
 import { useSeasonStore } from '@/stores/seasonStore'
+import ScoreBadge from '@/components/ui/ScoreBadge.vue'
 
 const store = useSeasonStore()
 
@@ -94,6 +97,7 @@ function posBadgeClass(i: number): string {
 
 .col-pos { width: 52px; text-align: center; }
 .col-num { width: 70px; text-align: center; }
+.col-score { width: 96px; text-align: center; }
 .col-gap { width: 80px; text-align: center; }
 
 .standings tbody .row {
@@ -185,6 +189,10 @@ function posBadgeClass(i: number): string {
   font-size: 0.9rem;
   text-align: center;
   color: var(--text-dim);
+}
+
+.cell-score {
+  text-align: center;
 }
 
 .cell-gap {

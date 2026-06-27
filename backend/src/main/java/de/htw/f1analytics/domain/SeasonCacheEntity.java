@@ -11,11 +11,13 @@ import java.time.Instant;
 public class SeasonCacheEntity extends PanacheEntityBase {
 
     @Id
-    @jakarta.persistence.Column(name = "season_year")
+    @Column(name = "season_year")
     public int year;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     public String statsJson;
 
     public Instant cachedAt;
+
+    public Integer cacheVersion;
 }

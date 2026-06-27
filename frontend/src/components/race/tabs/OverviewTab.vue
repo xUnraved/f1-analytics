@@ -12,6 +12,7 @@
           <th>RUNDEN</th>
           <th>ABSTAND</th>
           <th>STATUS</th>
+          <th class="th-score">F1ALYTICS</th>
         </tr>
         </thead>
         <tbody>
@@ -27,6 +28,7 @@
           <td>{{ r.laps ?? '—' }}</td>
           <td class="cell-gap">{{ gapDisplay(r) }}</td>
           <td><span class="status-chip" :class="statusClass(r)">{{ statusText(r) }}</span></td>
+          <td class="cell-score"><ScoreBadge :card="r.score" /></td>
         </tr>
         </tbody>
       </table>
@@ -38,6 +40,7 @@
 import { computed } from 'vue'
 import { useSeasonStore } from '@/stores/seasonStore'
 import type { RaceResultRow } from '@/types/f1'
+import ScoreBadge from '@/components/ui/ScoreBadge.vue'
 
 const store = useSeasonStore()
 const race = computed(() => store.selectedRace)
@@ -127,6 +130,10 @@ function gapDisplay(r: RaceResultRow): string {
   color: #3a3a3a;
 }
 
+.th-score {
+  text-align: center;
+}
+
 .results-table tbody tr {
   border-bottom: 1px solid #161616;
   transition: background 0.1s;
@@ -148,6 +155,10 @@ function gapDisplay(r: RaceResultRow): string {
   padding: 11px 14px;
   font-size: 0.9rem;
   color: #ccc;
+}
+
+.cell-score {
+  text-align: center;
 }
 
 .pos-badge {

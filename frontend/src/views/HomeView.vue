@@ -97,7 +97,7 @@ onMounted(async () => {
 })
 
 function setTab(t: Tab) {
-  if (t === 'races' && tab.value !== 'races') store.clearRace()
+  if (t === 'races') store.clearRace()
   tab.value = t
 }
 

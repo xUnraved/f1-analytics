@@ -2,7 +2,6 @@ package de.htw.f1analytics.client;
 
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
@@ -27,4 +26,12 @@ public interface OpenF1Client {
     @GET
     @Path("/meetings")
     List<OpenF1MeetingDto> getMeetings(@QueryParam("year") int year);
+
+    @GET
+    @Path("/starting_grid")
+    List<OpenF1GridDto> getStartingGrid(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/laps")
+    List<OpenF1LapDto> getLaps(@QueryParam("session_key") int sessionKey);
 }

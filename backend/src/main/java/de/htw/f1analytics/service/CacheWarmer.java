@@ -20,9 +20,9 @@ public class CacheWarmer {
 
     void onStart(@Observes StartupEvent ev) {
         int cur = Year.now().getValue();
-        // Warm years newest-first so the default view (current year) is ready first
         List<Integer> years = new ArrayList<>();
-        for (int y = cur; y >= SeasonService.START_YEAR; y--) years.add(y);
+        years.add(cur);
+        if (cur - 1 >= SeasonService.START_YEAR) years.add(cur - 1);
 
         Thread.ofVirtual().name("cache-warmer").start(() -> {
             for (int y : years) {

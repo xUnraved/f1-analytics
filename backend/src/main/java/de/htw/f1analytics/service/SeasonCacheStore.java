@@ -14,6 +14,8 @@ public class SeasonCacheStore {
 
     private static final Logger LOG = Logger.getLogger(SeasonCacheStore.class);
 
+    public static final int CACHE_VERSION = 2;
+
     @Inject
     ObjectMapper mapper;
 
@@ -21,6 +23,10 @@ public class SeasonCacheStore {
     public SeasonService.SeasonStats load(int year) {
         SeasonCacheEntity e = SeasonCacheEntity.findById(year);
         if (e == null) return null;
+        if (e.cacheVersion == null || e.cacheVersion != CACHE_VERSION) {
+            LOG.infof("DB-Cache für %d ist veraltet (Version %s, erwartet %d) und wird neu aufgebaut.", year, e.cacheVersion, CACHE_VERSION);
+            return null;
+        }
         try {
             return mapper.readValue(e.statsJson, SeasonService.SeasonStats.class);
         } catch (Exception ex) {
@@ -45,10 +51,12 @@ public class SeasonCacheStore {
                 e.year = year;
                 e.statsJson = json;
                 e.cachedAt = Instant.now();
+                e.cacheVersion = CACHE_VERSION;
                 e.persist();
             } else {
                 e.statsJson = json;
                 e.cachedAt = Instant.now();
+                e.cacheVersion = CACHE_VERSION;
             }
         } catch (Exception ex) {
             LOG.warnf("DB-Cache für %d konnte nicht gespeichert werden: %s", year, ex.getMessage());
