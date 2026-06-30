@@ -33,8 +33,6 @@ import {
   LineElement,
   Tooltip,
   Legend,
-  type ChartOptions,
-  type TooltipItem,
 } from 'chart.js'
 import { useSeasonStore } from '@/stores/seasonStore'
 
@@ -63,10 +61,10 @@ const chartData = computed(() => ({
   })),
 }))
 
-const chartOptions: ChartOptions<'line'> = {
+const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { mode: 'index', intersect: false },
+  interaction: { mode: 'index' as const, intersect: false },
   plugins: {
     legend: {
       display: true,
@@ -85,7 +83,8 @@ const chartOptions: ChartOptions<'line'> = {
       bodyColor: '#aeb8c6',
       padding: 10,
       callbacks: {
-        label: (ctx: TooltipItem<'line'>) => `  ${ctx.dataset.label ?? ''}: ${ctx.parsed.y} Pkt`,
+        label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+          `  ${ctx.dataset.label ?? ''}: ${ctx.parsed.y ?? 0} Pkt`,
       },
     },
   },

@@ -56,7 +56,8 @@
       <RaceGrid v-else-if="tab === 'races'" @select="goToRace" />
       <SeasonStandings v-else-if="tab === 'standings'" />
       <DriversTab v-else-if="tab === 'drivers'" />
-      <SeasonTeams v-else />
+      <SeasonTeams v-else-if="tab === 'teams'" />
+      <TippspielTab v-else />
     </div>
   </section>
 </template>
@@ -71,8 +72,9 @@ import RaceDetail from '@/components/race/RaceDetail.vue'
 import DriversTab from '@/components/race/tabs/DriversTab.vue'
 import SeasonTeams from '@/components/season/SeasonTeams.vue'
 import SeasonStandings from '@/components/season/SeasonStandings.vue'
+import TippspielTab from '@/components/tippspiel/TippspielTab.vue'
 
-type Tab = 'races' | 'drivers' | 'teams' | 'standings'
+type Tab = 'races' | 'drivers' | 'teams' | 'standings' | 'tippspiel'
 
 const store = useSeasonStore()
 const raceSectionEl = ref<HTMLElement | null>(null)
@@ -81,8 +83,9 @@ const tab = ref<Tab>('races')
 const tabs: { key: Tab; label: string }[] = [
   { key: 'races', label: 'RENNEN' },
   { key: 'standings', label: 'WERTUNG' },
-  { key: 'drivers', label: 'ANALYSE' },
+  { key: 'drivers', label: 'FAHRER' },
   { key: 'teams', label: 'TEAMS' },
+  { key: 'tippspiel', label: 'TIPPSPIEL' },
 ]
 
 const rings = [30, 48, 66, 84, 96]

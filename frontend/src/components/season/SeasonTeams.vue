@@ -27,7 +27,7 @@
             @mousedown.prevent
             @click="addTeam(t.team)"
           >
-            <span class="sug-photo team" :style="{ '--dc': t.color, background: t.color }">{{ teamInitials(t.team) }}</span>
+            <span class="sug-photo team" :style="`--dc:${t.color};background:${t.color}`">{{ teamInitials(t.team) }}</span>
             <span class="sug-text">
               <span class="sug-name"><b>{{ t.team }}</b></span>
               <span class="sug-team">P{{ rank(t) }} · {{ t.points }} PKT · {{ t.drivers.map((d) => d.abbr).join(' / ') }}</span>
@@ -45,7 +45,7 @@
           :key="t.team"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="{ '--dc': dcolor(t) }"
+          :style="`--dc:${dcolor(t)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -297,8 +297,9 @@ function onDrop(i: number) {
   resetDrag()
   if (from === null || from === i) return
   const arr = [...picked.value]
-  const moved = arr.splice(from, 1)[0]
+  const moved = arr[from]
   if (moved === undefined) return
+  arr.splice(from, 1)
   arr.splice(i, 0, moved)
   picked.value = arr
 }
@@ -342,8 +343,8 @@ function short(name: string): string {
 }
 function teamInitials(name: string): string {
   const words = name.trim().split(/\s+/)
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
-  return words.slice(0, 3).map((w) => w[0]).join('').toUpperCase()
+  if (words.length === 1) return (words[0] ?? name).slice(0, 3).toUpperCase()
+  return words.slice(0, 3).map((w) => w[0] ?? '').join('').toUpperCase()
 }
 function f1Text(t: TeamStanding): string {
   const v = teamF1(t)
@@ -462,8 +463,12 @@ function anchor(i: number): string {
 
 const n = computed(() => store.races.length)
 function teamCum(t: TeamStanding): number[] {
-  const arr = new Array(n.value).fill(0)
-  for (const d of t.drivers) d.cum.forEach((v, i) => { if (i < arr.length) arr[i] += v })
+  const arr: number[] = Array.from({ length: n.value }, () => 0)
+  for (const d of t.drivers) {
+    d.cum.forEach((v, i) => {
+      if (i < arr.length) arr[i] = (arr[i] ?? 0) + v
+    })
+  }
   return arr
 }
 const maxPts = computed(() => {
@@ -501,7 +506,7 @@ const dmap = computed<Record<string, string>>(() => {
   for (const t of selected.value) {
     let c = t.color || '#999999'
     if (used.some((u) => dist(u, hexToRgb(c)) < 115)) {
-      let best = PALETTE[0]
+      let best: string = PALETTE[0] ?? '#888888'
       let bestMin = -1
       for (const p of PALETTE) {
         const prgb = hexToRgb(p)

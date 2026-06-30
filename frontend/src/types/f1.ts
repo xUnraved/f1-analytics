@@ -79,6 +79,9 @@ export interface DriverStanding extends Driver {
   bestFinish: number | null
   avgScore: number | null
   scoreHistory: number[]
+  headshot: string | null
+  maxTopSpeed: number | null
+  avgTopSpeed: number | null
 }
 
 export interface TeamStanding {

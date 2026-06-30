@@ -1,6 +1,6 @@
 <template>
   <div class="panel">
-    <div class="cmp-card pad pick">
+    <section class="card pick">
       <div class="search">
         <svg viewBox="0 0 24 24" class="search-ico" aria-hidden="true">
           <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
@@ -27,15 +27,15 @@
             @mousedown.prevent
             @click="addTeam(t.team)"
           >
-            <span class="sug-photo team" :style="{ '--dc': t.color, background: t.color }">{{ teamInitials(t.team) }}</span>
+            <span class="sug-photo team" :style="`--dc:${t.color};background:${t.color}`">{{ teamInitials(t.team) }}</span>
             <span class="sug-text">
               <span class="sug-name"><b>{{ t.team }}</b></span>
-              <span class="sug-team">{{ t.points }} PKT · {{ t.drivers.map((d) => d.abbr + ' ' + d.posText).join(' / ') }}</span>
+              <span class="sug-team">P{{ rank(t) }} · {{ t.points }} PKT · {{ t.drivers.map((d) => d.abbr).join(' / ') }}</span>
             </span>
             <span class="sug-add">+</span>
           </button>
         </div>
-        <div v-else-if="focused && full" class="sug-note">Maximal 4 Teams — entferne eins, um zu tauschen.</div>
+        <div v-else-if="focused && full" class="sug-note">Maximal 3 Teams — entferne eins, um zu tauschen.</div>
         <div v-else-if="focused && query.trim()" class="sug-note">Kein Treffer für „{{ query.trim() }}".</div>
       </div>
 
@@ -45,7 +45,7 @@
           :key="t.team"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="{ '--dc': dcolor(t) }"
+          :style="`--dc:${dcolor(t)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -56,8 +56,8 @@
           <span class="tile-photo team" :style="{ background: dcolor(t) }">{{ teamInitials(t.team) }}</span>
           <span class="tile-info">
             <span class="tile-abbr">{{ short(t.team) }}</span>
-            <span class="tile-name">{{ t.drivers.map((d) => d.abbr + ' ' + d.posText).join(' · ') }}</span>
-            <span class="tile-team">{{ t.points }} PKT</span>
+            <span class="tile-name">{{ t.drivers.map((d) => d.abbr).join(' · ') }}</span>
+            <span class="tile-team">P{{ rank(t) }} · {{ t.points }} PKT</span>
           </span>
           <span class="tile-score">
             <span class="tile-score-val">{{ f1Text(t) }}</span>
@@ -66,153 +66,217 @@
           <button type="button" class="tile-x" @click.stop="removeTeam(t.team)" aria-label="Entfernen">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
-          Suche oben nach einem Team und füge bis zu 4 hinzu.
+          Suche oben nach einem Team und füge bis zu 3 hinzu.
         </div>
       </div>
-    </div>
+    </section>
 
-    <div v-if="selected.length" class="cmp-card pad bars-card">
-      <div class="ch">
-        <span class="eyebrow">F1alytics Ø · Team</span>
-        <span class="hint mono">DIESES RENNEN · 1–10</span>
-      </div>
-      <div class="sbars">
-        <div v-for="t in selected" :key="t.team" class="sbar">
-          <div class="sbar-head">
-            <span class="sbar-ab" :style="{ color: dcolor(t) }">{{ t.team }}</span>
-            <span class="sbar-drs">{{ t.drivers.map((d) => d.abbr + ' ' + d.posText).join(' · ') }}</span>
-            <span class="sbar-val">{{ f1Text(t) }}</span>
-          </div>
-          <div class="sbar-track">
-            <div class="sbar-fill" :style="{ width: f1Pct(t), background: dcolor(t) }"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <template v-if="selected.length">
+      <div class="dash">
+        <section class="card">
+          <div class="card-title">Team-Profil</div>
+          <svg :viewBox="`0 0 ${RW} ${RH}`" width="100%" class="radar">
+            <polygon v-for="(ring, ri) in rings" :key="'ring' + ri" :points="ring" class="r-ring" />
+            <line v-for="(ax, ai) in axes" :key="'ax' + ai" :x1="CX" :y1="CY" :x2="axPt(ai, RR)[0]" :y2="axPt(ai, RR)[1]" class="r-ax" />
+            <polygon
+              v-for="t in selected"
+              :key="'p' + t.team"
+              :points="poly(t)"
+              :style="{ stroke: dcolor(t), fill: dcolor(t) + '24' }"
+              class="r-poly"
+            />
+            <text
+              v-for="(ax, ai) in axes"
+              :key="'l' + ai"
+              :x="axPt(ai, RR * 1.16)[0]"
+              :y="axPt(ai, RR * 1.16)[1]"
+              class="r-lbl"
+              :text-anchor="anchor(ai)"
+            >
+              {{ ax.l }}
+            </text>
+          </svg>
+        </section>
 
-    <div v-if="selected.length" class="cmp-card pad">
-      <div class="cmp-grid" :style="gridStyle">
-        <div class="row">
-          <div class="lbl"></div>
-          <div v-for="t in selected" :key="t.team" class="hd" :style="{ borderColor: dcolor(t) }">
-            <div class="ab" :style="{ color: dcolor(t) }">{{ short(t.team) }}</div>
+        <section class="card">
+          <div class="card-title">Direktvergleich</div>
+          <div class="bars">
+            <div v-for="m in barMetrics" :key="m.l" class="bgroup">
+              <div class="blabel mono">{{ m.l }}</div>
+              <div v-for="t in selected" :key="t.team" class="brow">
+                <span class="bteam" :style="{ color: dcolor(t) }">{{ short(t.team) }}</span>
+                <div class="btrack">
+                  <div class="bfill" :style="{ width: barPct(m, t), background: dcolor(t) }"></div>
+                </div>
+                <span class="bval">{{ m.f(m.g(t)) }}</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div v-for="m in metrics" :key="m.l" class="row" :class="{ hl: m.hl }">
-          <div class="lbl">{{ m.l }}</div>
-          <div v-for="t in selected" :key="t.team" class="val" :class="{ best: isBest(m, t) }">
-            {{ m.f(t) }}
-          </div>
-        </div>
+        </section>
       </div>
-    </div>
+
+      <div class="dash">
+        <section class="card">
+          <div class="card-title">Weitere Werte</div>
+          <div class="grid" :style="gridCols">
+            <div class="row">
+              <div class="lbl"></div>
+              <div v-for="t in selected" :key="t.team" class="hd" :style="{ borderColor: dcolor(t) }">
+                <span :style="{ color: dcolor(t) }">{{ short(t.team) }}</span>
+              </div>
+            </div>
+            <div v-for="m in tableMetrics" :key="m.l" class="row">
+              <div class="lbl">{{ m.l }}</div>
+              <div v-for="t in selected" :key="t.team" class="val" :class="{ best: isBest(m, t) }">
+                {{ m.f(m.g(t)) }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">Punkteverlauf</div>
+          <svg :viewBox="`0 0 ${W} ${H}`" width="100%" class="chart">
+            <line v-for="(gy, i) in gridLines" :key="i" :x1="pad" :y1="gy" :x2="W - pad" :y2="gy" class="g" />
+            <polyline
+              v-for="t in selected"
+              :key="'c' + t.team"
+              :points="line(t)"
+              fill="none"
+              :stroke="dcolor(t)"
+              stroke-width="2.5"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <div class="legend">
+            <span v-for="t in selected" :key="'lg' + t.team"><i :style="{ background: dcolor(t) }"></i>{{ short(t.team) }}</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="ch">
+          <span class="card-title" style="margin: 0">Fahrer im Team</span>
+          <span class="hint mono">TEAM WÄHLEN → DUELL</span>
+        </div>
+        <div class="dpick">
+          <button
+            v-for="t in selected"
+            :key="'d' + t.team"
+            type="button"
+            class="chip"
+            :class="{ on: duelTeam === t.team }"
+            :style="duelTeam === t.team ? { borderColor: dcolor(t), color: dcolor(t) } : {}"
+            @click="duelTeam = t.team"
+          >
+            {{ t.team }}
+          </button>
+        </div>
+        <div v-if="duel && duel.drivers.length >= 2" class="grid duel-grid" :style="duelCols">
+          <div class="row">
+            <div class="lbl"></div>
+            <div v-for="d in duel.drivers.slice(0, 2)" :key="d.abbr" class="hd" :style="{ borderColor: d.color }">
+              <span class="ab">{{ d.abbr }}</span>
+              <span class="sub">{{ d.name }}</span>
+            </div>
+          </div>
+          <div v-for="m in driverMetrics" :key="m.l" class="row">
+            <div class="lbl">{{ m.l }}</div>
+            <div
+              v-for="d in duel.drivers.slice(0, 2)"
+              :key="d.abbr"
+              class="val"
+              :class="{ best: duelBest(m, duel.drivers.slice(0, 2), d) }"
+            >
+              {{ m.f(m.g(d)) }}
+            </div>
+          </div>
+        </div>
+        <div v-else class="solo">Für dieses Team ist nur ein Fahrer erfasst.</div>
+      </section>
+    </template>
+
+    <div v-else class="empty">Mindestens ein Team auswählen, um den Vergleich zu sehen.</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { RaceResultRow } from '@/types/f1'
+import { useSeasonStore } from '@/stores/seasonStore'
+import type { TeamStanding, DriverStanding } from '@/types/f1'
 
-const props = defineProps<{ result: RaceResultRow[] }>()
-
-interface DrvAgg {
-  abbr: string
-  posText: string
-  pos: number
-  out: boolean
-}
-interface TeamAgg {
-  team: string
-  color: string
-  points: number
-  bestPos: number | null
-  f1: number | null
-  drivers: DrvAgg[]
-}
-interface Metric {
+interface TMetric {
   l: string
-  v: (t: TeamAgg) => number | null
-  f: (t: TeamAgg) => string
-  low: boolean
-  hl?: boolean
+  g: (t: TeamStanding) => number | null
+  f: (v: number | null) => string
+  low?: boolean
+}
+interface Axis {
+  l: string
+  g: (t: TeamStanding) => number | null
+  invert?: boolean
+}
+interface DMetric {
+  l: string
+  g: (d: DriverStanding) => number | null
+  f: (v: number | null) => string
+  low?: boolean
 }
 
-function out(r: RaceResultRow): boolean {
-  return r.dnf || r.dns || r.dsq
-}
-function statusText(r: RaceResultRow): string {
-  if (r.dnf) return 'DNF'
-  if (r.dns) return 'DNS'
-  if (r.dsq) return 'DSQ'
-  return 'P' + r.pos
-}
+const store = useSeasonStore()
 
-const teams = computed<TeamAgg[]>(() => {
-  const map = new Map<string, { team: string; color: string; points: number; rows: RaceResultRow[] }>()
-  for (const r of props.result) {
-    let t = map.get(r.team)
-    if (!t) {
-      t = { team: r.team, color: r.color, points: 0, rows: [] }
-      map.set(r.team, t)
-    }
-    t.points += r.pts
-    t.rows.push(r)
-  }
-  const arr: TeamAgg[] = [...map.values()].map((t) => {
-    const finishers = t.rows.filter((r) => !out(r)).map((r) => r.pos)
-    const scores = t.rows.map((r) => r.score?.score).filter((v): v is number => v != null)
-    const drivers = [...t.rows]
-      .sort((a, b) => a.pos - b.pos)
-      .map((r) => ({ abbr: r.abbr, posText: statusText(r), pos: r.pos, out: out(r) }))
-    return {
-      team: t.team,
-      color: t.color,
-      points: t.points,
-      bestPos: finishers.length ? Math.min(...finishers) : null,
-      f1: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
-      drivers,
-    }
-  })
-  arr.sort((a, b) => b.points - a.points || (a.bestPos ?? 99) - (b.bestPos ?? 99))
-  return arr
-})
+const RW = 340
+const RH = 262
+const CX = 170
+const CY = 126
+const RR = 86
 
-const metrics: Metric[] = [
-  { l: 'F1ALYTICS Ø', v: (t) => t.f1, f: (t) => (t.f1 == null ? '–' : t.f1.toFixed(1)), low: false, hl: true },
-  { l: 'PUNKTE', v: (t) => t.points, f: (t) => String(t.points), low: false },
-  { l: 'BESTES ERGEBNIS', v: (t) => t.bestPos, f: (t) => (t.bestPos == null ? '–' : 'P' + t.bestPos), low: true },
-  { l: 'FAHRER', v: () => null, f: (t) => t.drivers.map((d) => d.posText).join(' / '), low: false },
-]
+const W = 460
+const H = 220
+const pad = 14
 
 const query = ref('')
 const focused = ref(false)
 const picked = ref<string[]>([])
+const duelTeam = ref<string | null>(null)
 
 function seed() {
-  picked.value = teams.value.slice(0, Math.min(3, teams.value.length)).map((t) => t.team)
+  if (!store.teams.length) {
+    picked.value = []
+    return
+  }
+  const valid = picked.value.filter((name) => store.teams.some((t) => t.team === name))
+  picked.value = valid.length ? valid : store.teams.slice(0, Math.min(2, store.teams.length)).map((t) => t.team)
+  if (!duelTeam.value || !picked.value.includes(duelTeam.value)) {
+    duelTeam.value = picked.value[0] ?? null
+  }
 }
 seed()
-watch(() => props.result, seed)
+watch(() => store.teams, seed)
 
-const full = computed(() => picked.value.length >= 4)
+const full = computed(() => picked.value.length >= 3)
 
-const selected = computed<TeamAgg[]>(() =>
-  picked.value.map((name) => teams.value.find((t) => t.team === name)).filter((t): t is TeamAgg => !!t),
+const selected = computed<TeamStanding[]>(() =>
+  picked.value.map((name) => store.teams.find((t) => t.team === name)).filter((t): t is TeamStanding => !!t),
 )
+const duel = computed<TeamStanding | null>(() => store.teams.find((t) => t.team === duelTeam.value) ?? null)
 
-const suggestions = computed<TeamAgg[]>(() => {
+const suggestions = computed<TeamStanding[]>(() => {
   if (full.value) return []
-  const avail = teams.value.filter((t) => !picked.value.includes(t.team))
+  const avail = store.teams.filter((t) => !picked.value.includes(t.team))
   const q = query.value.trim().toLowerCase()
   if (!q) return focused.value ? avail : []
   return avail.filter(
-    (t) => t.team.toLowerCase().includes(q) || t.drivers.some((d) => d.abbr.toLowerCase().includes(q)),
+    (t) =>
+      t.team.toLowerCase().includes(q) ||
+      t.drivers.some((d) => d.abbr.toLowerCase().includes(q) || d.name.toLowerCase().includes(q)),
   )
 })
 
 function addTeam(name: string) {
-  if (picked.value.length < 4 && !picked.value.includes(name)) picked.value.push(name)
+  if (picked.value.length < 3 && !picked.value.includes(name)) picked.value.push(name)
   query.value = ''
+  if (!duelTeam.value) duelTeam.value = name
 }
 function addFirst() {
   const first = suggestions.value[0]
@@ -220,6 +284,7 @@ function addFirst() {
 }
 function removeTeam(name: string) {
   picked.value = picked.value.filter((t) => t !== name)
+  if (duelTeam.value === name) duelTeam.value = picked.value[0] ?? null
 }
 
 const dragIndex = ref<number | null>(null)
@@ -232,8 +297,9 @@ function onDrop(i: number) {
   resetDrag()
   if (from === null || from === i) return
   const arr = [...picked.value]
-  const moved = arr.splice(from, 1)[0]
+  const moved = arr[from]
   if (moved === undefined) return
+  arr.splice(from, 1)
   arr.splice(i, 0, moved)
   picked.value = arr
 }
@@ -242,36 +308,187 @@ function resetDrag() {
   overIndex.value = null
 }
 
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `1.4fr repeat(${Math.max(1, selected.value.length)}, 1fr)`,
-}))
 const tilesCols = computed(() => ({
   gridTemplateColumns: `repeat(${Math.max(1, selected.value.length)}, minmax(0, 1fr))`,
 }))
+const gridCols = computed(() => ({
+  gridTemplateColumns: `minmax(120px, 1.6fr) repeat(${Math.max(1, selected.value.length)}, minmax(0, 1fr))`,
+}))
+const duelCols = computed(() => ({ gridTemplateColumns: 'minmax(120px, 1.4fr) 1fr 1fr' }))
 
+function teamPodiums(t: TeamStanding): number {
+  return t.drivers.reduce((s, d) => s + d.podiums, 0)
+}
+function teamDnf(t: TeamStanding): number {
+  return t.drivers.reduce((s, d) => s + d.dnf, 0)
+}
+function teamAvgFinish(t: TeamStanding): number | null {
+  const vs = t.drivers.map((d) => d.avgFinish).filter((v): v is number => v != null)
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null
+}
+function teamBestFinish(t: TeamStanding): number | null {
+  const vs = t.drivers.map((d) => d.bestFinish).filter((v): v is number => v != null)
+  return vs.length ? Math.min(...vs) : null
+}
+function teamF1(t: TeamStanding): number | null {
+  const vs = t.drivers.map((d) => d.avgScore).filter((v): v is number => v != null)
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null
+}
+
+function rank(t: TeamStanding): number {
+  return store.teams.findIndex((x) => x.team === t.team) + 1
+}
 function short(name: string): string {
   return name.length > 14 ? name.slice(0, 13) + '…' : name
 }
 function teamInitials(name: string): string {
   const words = name.trim().split(/\s+/)
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
-  return words.slice(0, 3).map((w) => w[0]).join('').toUpperCase()
+  if (words.length === 1) return (words[0] ?? name).slice(0, 3).toUpperCase()
+  return words.slice(0, 3).map((w) => w[0] ?? '').join('').toUpperCase()
 }
-function f1Text(t: TeamAgg): string {
-  return t.f1 == null ? '–' : t.f1.toFixed(1)
+function f1Text(t: TeamStanding): string {
+  const v = teamF1(t)
+  return v == null ? '–' : v.toFixed(1)
 }
-function f1Pct(t: TeamAgg): string {
-  if (t.f1 == null) return '0%'
-  return Math.max(0, Math.min(100, (t.f1 / 10) * 100)).toFixed(1) + '%'
+function num1(v: number | null): string {
+  return v == null ? '–' : v.toFixed(1)
+}
+function int(v: number | null): string {
+  return v == null ? '–' : String(Math.round(v))
 }
 
-function isBest(m: Metric, t: TeamAgg): boolean {
+const barMetrics: TMetric[] = [
+  { l: 'PUNKTE', g: (t) => t.points, f: int },
+  { l: 'SIEGE', g: (t) => t.wins, f: int },
+  { l: 'PODESTPLÄTZE', g: teamPodiums, f: int },
+  { l: 'F1ALYTICS Ø', g: teamF1, f: num1 },
+]
+
+const tableMetrics: TMetric[] = [
+  { l: 'PUNKTE', g: (t) => t.points, f: int },
+  { l: 'SIEGE', g: (t) => t.wins, f: int },
+  { l: 'PODESTPLÄTZE', g: teamPodiums, f: int },
+  { l: 'Ø PLATZIERUNG', g: teamAvgFinish, f: num1, low: true },
+  { l: 'BESTE PLATZIERUNG', g: teamBestFinish, f: (v) => (v == null ? '–' : 'P' + Math.round(v)), low: true },
+  { l: 'DNF', g: teamDnf, f: int, low: true },
+  { l: 'F1ALYTICS Ø', g: teamF1, f: num1 },
+]
+
+const driverMetrics: DMetric[] = [
+  { l: 'PUNKTE', g: (d) => d.points, f: (v) => String(v ?? 0) },
+  { l: 'SIEGE', g: (d) => d.wins, f: (v) => String(v ?? 0) },
+  { l: 'PODESTPLÄTZE', g: (d) => d.podiums, f: (v) => String(v ?? 0) },
+  { l: 'Ø PLATZIERUNG', g: (d) => d.avgFinish, f: num1, low: true },
+  { l: 'DNF', g: (d) => d.dnf, f: (v) => String(v ?? 0), low: true },
+  { l: 'F1ALYTICS Ø', g: (d) => d.avgScore, f: num1 },
+]
+
+function isBest(m: TMetric, t: TeamStanding): boolean {
   if (selected.value.length < 2) return false
-  const vals = selected.value.map(m.v).filter((v): v is number => v != null)
+  const vals = selected.value.map(m.g).filter((v): v is number => v != null)
   if (vals.length < 2) return false
   const target = m.low ? Math.min(...vals) : Math.max(...vals)
-  const v = m.v(t)
+  const v = m.g(t)
   return v != null && v === target && Math.min(...vals) !== Math.max(...vals)
+}
+
+function barPct(m: TMetric, t: TeamStanding): string {
+  const vals = selected.value.map(m.g).filter((v): v is number => v != null)
+  const max = vals.length ? Math.max(...vals, 0.0001) : 1
+  const v = m.g(t)
+  if (v == null || max <= 0) return '0%'
+  return Math.max(4, Math.min(100, (v / max) * 100)).toFixed(1) + '%'
+}
+
+function duelBest(m: DMetric, ds: DriverStanding[], d: DriverStanding): boolean {
+  const vals = ds.map(m.g).filter((v): v is number => v != null)
+  if (vals.length < 2) return false
+  const target = m.low ? Math.min(...vals) : Math.max(...vals)
+  return m.g(d) === target && vals[0] !== vals[1]
+}
+
+const axes: Axis[] = [
+  { l: 'F1ALYTICS', g: teamF1 },
+  { l: 'PUNKTE', g: (t) => t.points },
+  { l: 'SIEGE', g: (t) => t.wins },
+  { l: 'PODIEN', g: teamPodiums },
+  { l: 'Ø PLATZ', g: teamAvgFinish, invert: true },
+]
+
+function norm(ax: Axis, t: TeamStanding): number {
+  const vals = store.teams.map(ax.g).filter((v): v is number => v != null)
+  if (!vals.length) return 0
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const v = ax.g(t)
+  if (v == null) return 0
+  if (max === min) return 0.6
+  let f = (v - min) / (max - min)
+  if (ax.invert) f = 1 - f
+  return f
+}
+
+function axPt(i: number, r: number): [number, number] {
+  const a = ((-90 + i * (360 / axes.length)) * Math.PI) / 180
+  return [CX + r * Math.cos(a), CY + r * Math.sin(a)]
+}
+
+function poly(t: TeamStanding): string {
+  return axes
+    .map((ax, i) => {
+      const r = RR * (0.12 + 0.88 * norm(ax, t))
+      const [x, y] = axPt(i, r)
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+}
+
+const rings = computed<string[]>(() =>
+  [0.25, 0.5, 0.75, 1].map((f) =>
+    axes
+      .map((_, i) => {
+        const [x, y] = axPt(i, RR * f)
+        return `${x.toFixed(1)},${y.toFixed(1)}`
+      })
+      .join(' '),
+  ),
+)
+
+function anchor(i: number): string {
+  const x = axPt(i, RR * 1.16)[0]
+  if (x < CX - 6) return 'end'
+  if (x > CX + 6) return 'start'
+  return 'middle'
+}
+
+const n = computed(() => store.races.length)
+function teamCum(t: TeamStanding): number[] {
+  const arr: number[] = Array.from({ length: n.value }, () => 0)
+  for (const d of t.drivers) {
+    d.cum.forEach((v, i) => {
+      if (i < arr.length) arr[i] = (arr[i] ?? 0) + v
+    })
+  }
+  return arr
+}
+const maxPts = computed(() => {
+  let m = 1
+  for (const t of selected.value) {
+    const c = teamCum(t)
+    m = Math.max(m, c[c.length - 1] ?? 0)
+  }
+  return m
+})
+const gridLines = computed(() => [0, 1, 2, 3].map((g) => pad + (g / 3) * (H - 2 * pad)))
+
+function cx(i: number): number {
+  return pad + (i / Math.max(1, n.value - 1)) * (W - 2 * pad)
+}
+function cy(v: number): number {
+  return H - pad - (v / maxPts.value) * (H - 2 * pad)
+}
+function line(t: TeamStanding): string {
+  return teamCum(t).map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(' ')
 }
 
 const PALETTE = ['#ff8c00', '#3b82f6', '#22d3ee', '#ec4899', '#a855f7', '#facc15', '#34d399', '#f43f5e']
@@ -289,7 +506,7 @@ const dmap = computed<Record<string, string>>(() => {
   for (const t of selected.value) {
     let c = t.color || '#999999'
     if (used.some((u) => dist(u, hexToRgb(c)) < 115)) {
-      let best = PALETTE[0]
+      let best: string = PALETTE[0] ?? '#888888'
       let bestMin = -1
       for (const p of PALETTE) {
         const prgb = hexToRgb(p)
@@ -306,14 +523,18 @@ const dmap = computed<Record<string, string>>(() => {
   }
   return map
 })
-function dcolor(t: TeamAgg): string {
+function dcolor(t: TeamStanding): string {
   return dmap.value[t.team] || t.color
 }
 </script>
 
 <style scoped>
 .panel {
+  --dc: var(--accent);
   animation: fade 0.4s ease both;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 @keyframes fade {
   from {
@@ -326,20 +547,20 @@ function dcolor(t: TeamAgg): string {
   }
 }
 
-.cmp-card {
+.card {
   background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 62%, transparent));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-}
-.cmp-card.pad {
   padding: 20px;
 }
-.pick {
-  margin-bottom: 14px;
-}
-.bars-card {
-  margin-bottom: 14px;
+.card-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 16px;
 }
 
 .ch {
@@ -449,9 +670,15 @@ function dcolor(t: TeamAgg): string {
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
+  color: var(--text-dim);
+}
+.sug-photo.team,
+.tile-photo.team {
   color: #fff;
+  font-size: 11px;
+  letter-spacing: 0.02em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 .sug-text {
@@ -551,7 +778,7 @@ function dcolor(t: TeamAgg): string {
   text-overflow: ellipsis;
 }
 .tile-name {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   color: var(--text-dim);
   margin-top: 1px;
   white-space: nowrap;
@@ -618,52 +845,88 @@ function dcolor(t: TeamAgg): string {
   padding: 10px 2px;
 }
 
-.sbars {
+.dash {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+.dash > .card {
+  min-width: 0;
+}
+
+.radar {
+  display: block;
+}
+.r-ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--line) 70%, transparent);
+  stroke-width: 0.8;
+}
+.r-ax {
+  stroke: color-mix(in srgb, var(--line) 80%, transparent);
+  stroke-width: 0.8;
+}
+.r-poly {
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.r-lbl {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  fill: var(--text-faint);
+}
+
+.bars {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.sbar-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+.blabel {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
   margin-bottom: 7px;
 }
-.sbar-ab {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 16px;
-  white-space: nowrap;
+.brow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
 }
-.sbar-drs {
+.bteam {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--text-faint);
-  flex: 1;
+  width: 70px;
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sbar-val {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 18px;
-  color: var(--text);
-}
-.sbar-track {
-  height: 12px;
-  border-radius: 6px;
+.btrack {
+  flex: 1;
+  height: 10px;
   background: rgba(0, 0, 0, 0.28);
   border: 1px solid var(--line);
+  border-radius: 5px;
   overflow: hidden;
 }
-.sbar-fill {
+.bfill {
   height: 100%;
-  border-radius: 6px 0 0 6px;
+  border-radius: 5px 0 0 5px;
   transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.bval {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-dim);
+  width: 44px;
+  text-align: right;
+}
 
-.cmp-grid {
+.grid {
   display: grid;
   align-items: end;
 }
@@ -677,38 +940,114 @@ function dcolor(t: TeamAgg): string {
   text-align: center;
   padding: 6px 4px 12px;
   border-bottom: 2px solid var(--line);
-}
-.hd .ab {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
+}
+.hd .ab {
+  font-size: 20px;
+  color: var(--text);
+}
+.hd .sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-faint);
+  margin-top: 3px;
 }
 .lbl {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
   letter-spacing: 0.08em;
-  padding: 13px 0;
+  padding: 12px 0;
 }
 .val {
   text-align: center;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 17px;
-  padding: 13px 0;
+  font-size: 18px;
+  padding: 12px 0;
   color: var(--text-dim);
 }
 .val.best {
   color: var(--accent);
 }
-.row.hl > .lbl {
-  color: var(--accent);
+
+.chart {
+  display: block;
 }
-.row.hl > .val {
-  font-size: 23px;
+.chart .g {
+  stroke: color-mix(in srgb, var(--line) 60%, transparent);
+  stroke-width: 0.8;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend i {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.dpick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.18s;
+  letter-spacing: 0.04em;
+}
+.chip:hover {
+  color: var(--text-dim);
+}
+.chip.on {
   color: var(--text);
 }
-.row.hl > .val.best {
-  color: var(--accent);
+.duel-grid {
+  margin-top: 4px;
+}
+.solo {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 8px 0;
+}
+
+.empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 30px 4px;
+}
+
+@media (max-aspect-ratio: 13/16) {
+  .dash {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

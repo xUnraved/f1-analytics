@@ -1,0 +1,1019 @@
+<template>
+  <div class="panel">
+    <div v-if="!auth.initialized" class="loading">Wird geladen …</div>
+
+    <section v-else-if="!auth.isLoggedIn" class="auth-shell">
+      <div class="auth-hero">
+        <div class="hero-emoji" aria-hidden="true">🏁</div>
+        <h1 class="hero-title">F1alytics Tippspiel</h1>
+        <p class="hero-sub">Tippe Sieger, Pole, Podium und schnellste Runde — sammle Punkte, krieg den Pokal.</p>
+        <ul class="hero-bullets mono">
+          <li><b>10</b> Punkte pro richtigem Sieger</li>
+          <li><b>5</b> Punkte pro richtiger Pole</li>
+          <li><b>5</b> Punkte pro Platz im Podium</li>
+          <li><b>3</b> Punkte für die schnellste Runde</li>
+        </ul>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button :class="{ on: mode === 'login' }" @click="mode = 'login'; clearAuthError()">Einloggen</button>
+          <button :class="{ on: mode === 'register' }" @click="mode = 'register'; clearAuthError()">Registrieren</button>
+        </div>
+
+        <form v-if="mode === 'login'" class="auth-form" @submit.prevent="doLogin">
+          <label class="field">
+            <span class="lbl mono">NUTZERNAME ODER EMAIL</span>
+            <input v-model.trim="loginValue" type="text" required autocomplete="username" maxlength="128" />
+          </label>
+          <label class="field">
+            <span class="lbl mono">PASSWORT</span>
+            <input v-model="loginPassword" type="password" required autocomplete="current-password" maxlength="128" />
+          </label>
+          <button type="submit" class="btn primary big" :disabled="auth.loading">
+            {{ auth.loading ? 'Anmelden …' : 'Einloggen' }}
+          </button>
+          <p v-if="auth.error" class="auth-error">{{ auth.error }}</p>
+        </form>
+
+        <form v-else class="auth-form" @submit.prevent="doRegister">
+          <label class="field">
+            <span class="lbl mono">NUTZERNAME · 3–32 ZEICHEN</span>
+            <input v-model.trim="regUsername" type="text" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_\-]+" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span class="lbl mono">EMAIL</span>
+            <input v-model.trim="regEmail" type="email" required maxlength="128" autocomplete="email" />
+          </label>
+          <label class="field">
+            <span class="lbl mono">PASSWORT · MIN. 6 ZEICHEN</span>
+            <input v-model="regPassword" type="password" required minlength="6" maxlength="128" autocomplete="new-password" />
+          </label>
+          <button type="submit" class="btn primary big" :disabled="auth.loading">
+            {{ auth.loading ? 'Account anlegen …' : 'Account erstellen' }}
+          </button>
+          <p v-if="auth.error" class="auth-error">{{ auth.error }}</p>
+        </form>
+      </div>
+    </section>
+
+    <div v-else style="display: contents">
+      <section class="account-bar">
+        <div class="account-info">
+          <span class="avatar" :style="{ background: (auth.user?.color ?? '#888888') }">{{ initial((auth.user?.username ?? '')) }}</span>
+          <div>
+            <div class="user-nick">{{ (auth.user?.username ?? '') }}</div>
+            <div class="user-meta mono">
+              <span class="pts-pill">{{ myTotalPoints }} PKT</span>
+              <span>{{ mySettled }} GEWERTET</span>
+              <span>{{ myOpen }} OFFEN</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn ghost small" @click="auth.logout">Logout</button>
+      </section>
+
+      <section v-if="upcoming.length" class="race-strip">
+        <button v-for="r in upcoming" :key="r.round" type="button" class="race-pill" :class="{ on: selectedRound === r.round }" @click="selectedRound = r.round">
+          <span class="rp-round mono">R{{ r.round }}</span>
+          <span class="rp-name">{{ r.gp }}</span>
+          <span class="rp-date mono">{{ shortDate(r.date) }}</span>
+        </button>
+      </section>
+
+      <section v-if="currentRace" class="race-hero" :style="{ backgroundImage: heroBg(currentRace) }">
+        <div class="race-hero-inner">
+          <div class="rh-meta mono">
+            <span v-if="currentRace.countryFlag" class="flag-wrap"><img :src="currentRace.countryFlag" :alt="currentRace.country" /></span>
+            {{ currentRace.country }} · R{{ currentRace.round }} · {{ formatDate(currentRace.date) }}
+          </div>
+          <h2 class="rh-title">{{ currentRace.gp }}</h2>
+          <div class="rh-countdown mono">
+            <span v-if="daysUntil(currentRace.date) > 0">
+              <b>{{ daysUntil(currentRace.date) }}</b> {{ daysUntil(currentRace.date) === 1 ? 'TAG' : 'TAGE' }} BIS ZUM RENNEN
+            </span>
+            <span v-else class="hot">RENNT HEUTE · TIPPS BALD ZU</span>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="currentRace" class="tips-grid">
+        <article class="tip-card winner-card" :class="{ done: !!myTipps.WINNER }">
+          <div class="tip-head">
+            <div class="tip-cat-row">
+              <span class="tip-icon" aria-hidden="true">🏆</span>
+              <span class="tip-cat mono">SIEGER</span>
+            </div>
+            <span class="tip-pts mono">+10</span>
+          </div>
+          <p class="tip-desc">Wer gewinnt das Rennen?</p>
+          <div class="picker">
+            <select v-model="picks.WINNER">
+              <option value="">— Fahrer wählen —</option>
+              <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
+            </select>
+            <button type="button" class="btn primary" :disabled="!picks.WINNER || saving.WINNER" @click="save('WINNER')">
+              {{ myTipps.WINNER ? 'Ändern' : 'Tippen' }}
+            </button>
+          </div>
+          <div v-if="myTipps.WINNER" class="my-tipp">
+            <span class="mt-pick">{{ myTipps.WINNER.pick }}</span>
+            <span class="mt-status mono">✓ ABGEGEBEN</span>
+          </div>
+        </article>
+
+        <article class="tip-card pole-card" :class="{ done: !!myTipps.POLE }">
+          <div class="tip-head">
+            <div class="tip-cat-row">
+              <span class="tip-icon" aria-hidden="true">⚡</span>
+              <span class="tip-cat mono">POLE POSITION</span>
+            </div>
+            <span class="tip-pts mono">+5</span>
+          </div>
+          <p class="tip-desc">Wer steht im Qualifying ganz vorne?</p>
+          <div class="picker">
+            <select v-model="picks.POLE">
+              <option value="">— Fahrer wählen —</option>
+              <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
+            </select>
+            <button type="button" class="btn primary" :disabled="!picks.POLE || saving.POLE" @click="save('POLE')">
+              {{ myTipps.POLE ? 'Ändern' : 'Tippen' }}
+            </button>
+          </div>
+          <div v-if="myTipps.POLE" class="my-tipp">
+            <span class="mt-pick">{{ myTipps.POLE.pick }}</span>
+            <span class="mt-status mono">✓ ABGEGEBEN</span>
+          </div>
+        </article>
+
+        <article class="tip-card podium-card" :class="{ done: !!myTipps.PODIUM }">
+          <div class="tip-head">
+            <div class="tip-cat-row">
+              <span class="tip-icon" aria-hidden="true">🥇</span>
+              <span class="tip-cat mono">PODIUM</span>
+            </div>
+            <span class="tip-pts mono">+5 PRO PLATZ</span>
+          </div>
+          <p class="tip-desc">P1, P2 und P3 in dieser Reihenfolge tippen.</p>
+          <div class="podium-picks">
+            <div class="podium-slot">
+              <span class="ps-pos mono">P1</span>
+              <select v-model="podiumPicks[0]">
+                <option value="">—</option>
+                <option v-for="d in podiumOptions(0)" :key="'p0-' + d.abbr" :value="d.abbr">{{ d.abbr }}</option>
+              </select>
+            </div>
+            <div class="podium-slot">
+              <span class="ps-pos mono">P2</span>
+              <select v-model="podiumPicks[1]">
+                <option value="">—</option>
+                <option v-for="d in podiumOptions(1)" :key="'p1-' + d.abbr" :value="d.abbr">{{ d.abbr }}</option>
+              </select>
+            </div>
+            <div class="podium-slot">
+              <span class="ps-pos mono">P3</span>
+              <select v-model="podiumPicks[2]">
+                <option value="">—</option>
+                <option v-for="d in podiumOptions(2)" :key="'p2-' + d.abbr" :value="d.abbr">{{ d.abbr }}</option>
+              </select>
+            </div>
+            <button type="button" class="btn primary" :disabled="!podiumComplete || saving.PODIUM" @click="save('PODIUM')">
+              {{ myTipps.PODIUM ? 'Ändern' : 'Tippen' }}
+            </button>
+          </div>
+          <div v-if="myTipps.PODIUM" class="my-tipp">
+            <span class="mt-pick">{{ formatPodium(myTipps.PODIUM.pick) }}</span>
+            <span class="mt-status mono">✓ ABGEGEBEN</span>
+          </div>
+        </article>
+
+        <article class="tip-card fl-card" :class="{ done: !!myTipps.FASTEST_LAP }">
+          <div class="tip-head">
+            <div class="tip-cat-row">
+              <span class="tip-icon" aria-hidden="true">⏱</span>
+              <span class="tip-cat mono">SCHNELLSTE RUNDE</span>
+            </div>
+            <span class="tip-pts mono">+3</span>
+          </div>
+          <p class="tip-desc">Wer fährt die schnellste Rennrunde?</p>
+          <div class="picker">
+            <select v-model="picks.FASTEST_LAP">
+              <option value="">— Fahrer wählen —</option>
+              <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
+            </select>
+            <button type="button" class="btn primary" :disabled="!picks.FASTEST_LAP || saving.FASTEST_LAP" @click="save('FASTEST_LAP')">
+              {{ myTipps.FASTEST_LAP ? 'Ändern' : 'Tippen' }}
+            </button>
+          </div>
+          <div v-if="myTipps.FASTEST_LAP" class="my-tipp">
+            <span class="mt-pick">{{ myTipps.FASTEST_LAP.pick }}</span>
+            <span class="mt-status mono">✓ ABGEGEBEN</span>
+          </div>
+        </article>
+      </section>
+
+      <section v-if="currentRace && hasCrowdPicks" class="card community-card">
+        <div class="card-title">Was die Community tippt · R{{ currentRace.round }}</div>
+        <div class="crowd-grid">
+          <div v-for="cat in categories" :key="cat" class="crowd-col">
+            <div class="crowd-label mono">
+              <span class="crowd-icon" aria-hidden="true">{{ categoryIcon(cat) }}</span>
+              {{ categoryLabel(cat) }}
+            </div>
+            <div v-if="crowdByCat[cat].length" class="crowd-bars">
+              <div v-for="(p, i) in crowdByCat[cat].slice(0, 4)" :key="cat + '-' + i" class="crowd-row" :class="{ leader: i === 0 }">
+                <span class="cr-pick">{{ formatCrowdPick(cat, p.pick) }}</span>
+                <div class="cr-track">
+                  <div class="cr-fill" :style="`width:${crowdPct(cat, p.count)}%`"></div>
+                </div>
+                <span class="cr-pct mono">{{ crowdPct(cat, p.count) }}%</span>
+              </div>
+            </div>
+            <div v-else class="crowd-empty mono">NOCH KEINE TIPPS</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card lb-card">
+        <div class="card-title">Saison-Leaderboard {{ store.year }}</div>
+        <div v-if="leaderboard.length" class="lb-list">
+          <div v-for="(entry, i) in leaderboard" :key="entry.username" class="lb-row" :class="{ me: entry.username === (auth.user ? auth.user.username : ''), top: i < 3 }">
+            <span class="lb-rank">
+              <span v-if="i === 0" class="medal" aria-hidden="true">🥇</span>
+              <span v-else-if="i === 1" class="medal" aria-hidden="true">🥈</span>
+              <span v-else-if="i === 2" class="medal" aria-hidden="true">🥉</span>
+              <span v-else class="mono">{{ i + 1 }}</span>
+            </span>
+            <span class="lb-avatar" :style="{ background: entry.color }">{{ initial(entry.username) }}</span>
+            <span class="lb-nick">
+              {{ entry.username }}
+              <span v-if="entry.username === (auth.user?.username ?? '')" class="me-tag mono">DU</span>
+            </span>
+            <span class="lb-stats mono">{{ entry.settledTipps }} GEW. · {{ entry.openTipps }} OFFEN</span>
+            <span class="lb-points">{{ entry.totalPoints }}</span>
+          </div>
+        </div>
+        <div v-else class="empty">Noch keine ausgewerteten Tipps in dieser Saison.</div>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { useSeasonStore } from '@/stores/seasonStore'
+import { useAuthStore, authHeaders } from '@/stores/authStore'
+
+const store = useSeasonStore()
+const auth = useAuthStore()
+
+interface Tipp {
+  id: number
+  username: string
+  userColor: string
+  year: number
+  round: number
+  category: string
+  pick: string
+  points: number | null
+  createdAt: string
+  settledAt: string | null
+}
+interface LeaderboardEntry {
+  username: string
+  color: string
+  totalPoints: number
+  settledTipps: number
+  openTipps: number
+}
+interface CrowdPickItem {
+  category: string
+  pick: string
+  count: number
+}
+interface RaceInfo {
+  year: number
+  round: number
+  gp: string
+  country: string
+  date: string
+  countryFlag: string | null
+  circuitImage: string | null
+  tipsOpen: boolean
+}
+
+const categories = ['WINNER', 'POLE', 'PODIUM', 'FASTEST_LAP'] as const
+type Cat = (typeof categories)[number]
+
+const mode = ref<'login' | 'register'>('login')
+const loginValue = ref('')
+const loginPassword = ref('')
+const regUsername = ref('')
+const regEmail = ref('')
+const regPassword = ref('')
+
+const upcoming = ref<RaceInfo[]>([])
+const selectedRound = ref<number | null>(null)
+const myAllTipps = ref<Tipp[]>([])
+const leaderboard = ref<LeaderboardEntry[]>([])
+const crowdRaw = ref<CrowdPickItem[]>([])
+
+const picks = reactive<Record<Cat, string>>({ WINNER: '', POLE: '', PODIUM: '', FASTEST_LAP: '' })
+const podiumPicks = ref<string[]>(['', '', ''])
+const saving = reactive<Record<Cat, boolean>>({ WINNER: false, POLE: false, PODIUM: false, FASTEST_LAP: false })
+
+const currentRace = computed<RaceInfo | null>(
+  () => upcoming.value.find((r) => r.round === selectedRound.value) ?? upcoming.value[0] ?? null,
+)
+
+const driverOptions = computed(() => store.drivers.map((d) => ({ abbr: d.abbr, name: d.name })))
+
+function podiumOptions(slot: number) {
+  const taken = new Set(podiumPicks.value.filter((_, i) => i !== slot).filter(Boolean))
+  return driverOptions.value.filter((d) => !taken.has(d.abbr))
+}
+
+const podiumComplete = computed(() => podiumPicks.value.every((p) => p) && new Set(podiumPicks.value).size === 3)
+
+const myTipps = computed<Record<Cat, Tipp | null>>(() => {
+  const r: Record<Cat, Tipp | null> = { WINNER: null, POLE: null, PODIUM: null, FASTEST_LAP: null }
+  if (!currentRace.value) return r
+  for (const t of myAllTipps.value) {
+    if (t.round === currentRace.value.round && (t.category as Cat) in r) {
+      r[t.category as Cat] = t
+    }
+  }
+  return r
+})
+
+const myTotalPoints = computed(() => myAllTipps.value.reduce((s, t) => s + (t.points ?? 0), 0))
+const mySettled = computed(() => myAllTipps.value.filter((t) => t.points != null).length)
+const myOpen = computed(() => myAllTipps.value.filter((t) => t.points == null).length)
+
+const crowdByCat = computed<Record<Cat, CrowdPickItem[]>>(() => {
+  const r: Record<Cat, CrowdPickItem[]> = { WINNER: [], POLE: [], PODIUM: [], FASTEST_LAP: [] }
+  for (const p of crowdRaw.value) {
+    if ((p.category as Cat) in r) r[p.category as Cat].push(p)
+  }
+  return r
+})
+
+const hasCrowdPicks = computed(() => crowdRaw.value.length > 0)
+
+function crowdPct(cat: Cat, count: number): number {
+  const total = crowdByCat.value[cat].reduce((s, p) => s + p.count, 0)
+  return total ? Math.round((count / total) * 100) : 0
+}
+
+function categoryLabel(cat: Cat): string {
+  return cat === 'WINNER' ? 'SIEGER' : cat === 'POLE' ? 'POLE' : cat === 'PODIUM' ? 'PODIUM' : 'SCHNELLSTE RUNDE'
+}
+function categoryIcon(cat: Cat): string {
+  return cat === 'WINNER' ? '🏆' : cat === 'POLE' ? '⚡' : cat === 'PODIUM' ? '🥇' : '⏱'
+}
+
+function formatPodium(pick: string): string {
+  return pick.split('|').map((p, i) => `P${i + 1} ${p}`).join(' · ')
+}
+function formatCrowdPick(cat: Cat, pick: string): string {
+  return cat === 'PODIUM' ? pick.replace(/\|/g, '·') : pick
+}
+
+function initial(s: string): string {
+  return s ? s.trim().charAt(0).toUpperCase() : '?'
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+function shortDate(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })
+}
+function daysUntil(iso: string): number {
+  if (!iso) return 0
+  const d = new Date(iso + 'T00:00:00').getTime()
+  const now = new Date().setHours(0, 0, 0, 0)
+  return Math.max(0, Math.round((d - now) / (1000 * 60 * 60 * 24)))
+}
+function heroBg(r: RaceInfo): string {
+  if (r.circuitImage) {
+    return `linear-gradient(180deg, rgba(13,17,23,0.55) 0%, rgba(13,17,23,0.92) 100%), url(${r.circuitImage})`
+  }
+  return 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--surface)), var(--surface))'
+}
+
+function clearAuthError() {
+  auth.clearError()
+}
+
+async function doLogin() {
+  const ok = await auth.login(loginValue.value, loginPassword.value)
+  if (ok) {
+    loginPassword.value = ''
+    await reloadAll()
+  }
+}
+
+async function doRegister() {
+  const ok = await auth.register(regUsername.value, regEmail.value, regPassword.value)
+  if (ok) {
+    regPassword.value = ''
+    await reloadAll()
+  }
+}
+
+async function loadUpcoming() {
+  try {
+    const res = await fetch(`/api/betting/upcoming/${store.year}`)
+    upcoming.value = await res.json()
+    if (upcoming.value.length && (selectedRound.value === null || !upcoming.value.some((r) => r.round === selectedRound.value))) {
+      selectedRound.value = upcoming.value[0]?.round ?? null
+    }
+  } catch {
+    upcoming.value = []
+  }
+}
+
+async function loadMyTipps() {
+  if (!auth.isLoggedIn) {
+    myAllTipps.value = []
+    return
+  }
+  try {
+    const res = await fetch(`/api/betting/me/season/${store.year}`, { headers: authHeaders() })
+    if (res.ok) myAllTipps.value = await res.json()
+    else myAllTipps.value = []
+  } catch {
+    myAllTipps.value = []
+  }
+}
+
+async function loadCrowd() {
+  if (!currentRace.value) {
+    crowdRaw.value = []
+    return
+  }
+  try {
+    const res = await fetch(`/api/betting/crowd/${store.year}/${currentRace.value.round}`)
+    crowdRaw.value = await res.json()
+  } catch {
+    crowdRaw.value = []
+  }
+}
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch(`/api/betting/leaderboard/${store.year}`)
+    leaderboard.value = await res.json()
+  } catch {
+    leaderboard.value = []
+  }
+}
+
+async function save(cat: Cat) {
+  if (!auth.isLoggedIn || !currentRace.value) return
+  let pick = picks[cat]
+  if (cat === 'PODIUM') {
+    if (!podiumComplete.value) return
+    pick = podiumPicks.value.join('|')
+  }
+  if (!pick) return
+  saving[cat] = true
+  try {
+    const res = await fetch('/api/betting/tipp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        year: store.year,
+        round: currentRace.value.round,
+        category: cat,
+        pick,
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text()
+      alert('Konnte Tipp nicht speichern: ' + t)
+      return
+    }
+    await Promise.all([loadMyTipps(), loadCrowd(), loadLeaderboard()])
+  } finally {
+    saving[cat] = false
+  }
+}
+
+async function reloadAll() {
+  await loadUpcoming()
+  await Promise.all([loadMyTipps(), loadCrowd(), loadLeaderboard()])
+}
+
+watch(myTipps, (mt) => {
+  picks.WINNER = mt.WINNER?.pick ?? ''
+  picks.POLE = mt.POLE?.pick ?? ''
+  picks.FASTEST_LAP = mt.FASTEST_LAP?.pick ?? ''
+  if (mt.PODIUM) {
+    const parts = mt.PODIUM.pick.split('|')
+    podiumPicks.value = [parts[0] ?? '', parts[1] ?? '', parts[2] ?? '']
+  } else {
+    podiumPicks.value = ['', '', '']
+  }
+})
+
+watch(() => selectedRound.value, async () => {
+  await loadCrowd()
+})
+watch(() => store.year, async () => {
+  await reloadAll()
+})
+watch(() => auth.isLoggedIn, async (loggedIn) => {
+  if (loggedIn) await reloadAll()
+  else {
+    myAllTipps.value = []
+  }
+})
+
+onMounted(async () => {
+  if (!auth.initialized) await auth.fetchMe()
+  await reloadAll()
+})
+</script>
+
+<style scoped>
+.panel {
+  animation: fade 0.4s ease both;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+@keyframes fade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 18px 4px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.loading {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 40px 4px;
+  text-align: center;
+}
+
+.auth-shell {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+  padding: 0;
+}
+.auth-hero {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--surface)), var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-emoji {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+.hero-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 38px;
+  margin: 0 0 10px;
+  letter-spacing: -0.02em;
+}
+.hero-sub {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  margin: 0 0 22px;
+  line-height: 1.5;
+}
+.hero-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.hero-bullets b {
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 14px;
+  display: inline-block;
+  min-width: 22px;
+}
+
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 28px 24px;
+  box-shadow: var(--shadow);
+}
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.auth-tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 12px 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+.auth-tabs button:hover {
+  color: var(--text-dim);
+}
+.auth-tabs button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lbl {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+.field input {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  height: 44px;
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.auth-error {
+  color: #f87171;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  padding: 10px 12px;
+  background: color-mix(in srgb, #f87171 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f87171 40%, transparent);
+  border-radius: 8px;
+}
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 0 16px;
+  height: 38px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+.btn:hover:not(:disabled) { color: var(--text); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn.ghost { background: transparent; }
+.btn.small { height: 32px; padding: 0 12px; font-size: 10px; }
+.btn.big { height: 48px; font-size: 12px; }
+
+.account-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--surface)), var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.account-info { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.avatar {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 19px;
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  flex-shrink: 0;
+}
+.user-nick {
+  font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--text);
+}
+.user-meta {
+  font-size: 10px; letter-spacing: 0.1em; color: var(--text-faint);
+  display: flex; gap: 14px; margin-top: 3px;
+}
+.pts-pill {
+  background: var(--accent); color: #fff;
+  padding: 2px 9px; border-radius: 4px; letter-spacing: 0.12em;
+}
+
+.race-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.race-pill {
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 110px;
+  transition: all 0.15s;
+}
+.race-pill:hover { border-color: color-mix(in srgb, var(--text-faint) 60%, var(--line)); }
+.race-pill.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.rp-round {
+  font-size: 9px; letter-spacing: 0.14em; color: var(--text-faint);
+}
+.race-pill.on .rp-round { color: var(--accent); }
+.rp-name {
+  font-family: var(--font-display); font-weight: 700; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.rp-date { font-size: 10px; color: var(--text-faint); }
+
+.race-hero {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface);
+  overflow: hidden;
+  min-height: 200px;
+  display: flex;
+  align-items: flex-end;
+}
+.race-hero-inner {
+  padding: 26px 28px 22px;
+  color: #fff;
+  width: 100%;
+}
+.rh-meta {
+  font-size: 11px; letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.78);
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.flag-wrap {
+  display: inline-flex; width: 24px; height: 16px;
+  border-radius: 2px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.flag-wrap img { width: 100%; height: 100%; object-fit: cover; }
+.rh-title {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 44px; letter-spacing: -0.02em; margin: 0 0 12px;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+.rh-countdown {
+  font-size: 11px; letter-spacing: 0.16em;
+  color: rgba(255,255,255,0.85);
+}
+.rh-countdown b {
+  color: var(--accent); font-family: var(--font-display);
+  font-size: 22px; margin-right: 4px;
+}
+.rh-countdown .hot {
+  color: #fbbf24;
+  animation: pulse-glow 1.6s ease-in-out infinite;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #fbbf24 22%, transparent);
+  display: inline-block;
+}
+
+.tips-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+.tip-card {
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 62%, transparent));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  min-width: 0;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.tip-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+.tip-card.done {
+  border-color: color-mix(in srgb, #4ade80 38%, var(--line));
+  background: linear-gradient(180deg, color-mix(in srgb, #4ade80 4%, var(--surface)), var(--surface));
+}
+.tip-card.podium-card { grid-column: span 2; }
+.tip-head {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.tip-cat-row { display: flex; align-items: center; gap: 8px; }
+.tip-icon { font-size: 18px; }
+.tip-cat {
+  font-size: 11px; letter-spacing: 0.16em; color: var(--accent);
+}
+.tip-pts {
+  font-size: 10px; letter-spacing: 0.1em; color: var(--text-faint);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  padding: 3px 9px; border-radius: 4px;
+}
+.tip-desc { font-size: 0.86rem; color: var(--text-dim); margin: 0; }
+
+.picker { display: flex; gap: 8px; }
+.picker select {
+  flex: 1; height: 40px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--text); padding: 0 10px; font-size: 0.9rem; outline: none;
+}
+.picker select:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.podium-picks {
+  display: grid; grid-template-columns: repeat(3, 1fr) auto;
+  gap: 10px; align-items: end;
+}
+.podium-slot { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ps-pos { font-size: 10px; letter-spacing: 0.14em; color: var(--text-faint); }
+.podium-slot select {
+  height: 40px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--text); padding: 0 10px; font-size: 0.9rem; outline: none;
+}
+
+.my-tipp {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2); border: 1px solid var(--line);
+  animation: count-up 0.3s ease;
+}
+.mt-pick {
+  font-family: var(--font-display); font-weight: 700; font-size: 16px;
+  color: var(--text); flex: 1;
+}
+.mt-status {
+  font-size: 10px; letter-spacing: 0.12em;
+  color: #4ade80;
+}
+
+.card {
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 62%, transparent));
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 20px;
+}
+.card-title {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-faint); margin-bottom: 16px;
+}
+
+.crowd-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px;
+}
+.crowd-col { min-width: 0; }
+.crowd-label {
+  font-size: 10px; letter-spacing: 0.14em; color: var(--accent);
+  margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.crowd-icon { font-size: 14px; }
+.crowd-row {
+  display: grid; grid-template-columns: 80px 1fr 40px;
+  align-items: center; gap: 8px;
+  margin-bottom: 6px; font-size: 0.85rem;
+}
+.cr-pick {
+  font-family: var(--font-display); font-weight: 700; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.crowd-row.leader .cr-pick { color: var(--text); }
+.cr-track {
+  height: 9px; border-radius: 5px;
+  background: rgba(0, 0, 0, 0.28); border: 1px solid var(--line);
+  overflow: hidden;
+}
+.cr-fill {
+  height: 100%; background: var(--text-faint);
+  border-radius: 5px 0 0 5px;
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.crowd-row.leader .cr-fill { background: var(--accent); }
+.cr-pct {
+  font-size: 11px; color: var(--text-faint); text-align: right;
+}
+.crowd-row.leader .cr-pct { color: var(--accent); }
+.crowd-empty {
+  font-size: 11px; color: var(--text-faint); letter-spacing: 0.08em; padding: 8px 0;
+}
+
+.lb-list { display: flex; flex-direction: column; gap: 5px; }
+.lb-row {
+  display: grid; grid-template-columns: 40px 36px 1fr auto auto;
+  gap: 12px; align-items: center;
+  padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  transition: all 0.15s;
+}
+.lb-row.me {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.lb-row.top {
+  background: color-mix(in srgb, #facc15 4%, transparent);
+}
+.lb-row.top.me {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.lb-rank {
+  font-size: 12px; color: var(--text-faint); text-align: center;
+  display: flex; align-items: center; justify-content: center;
+}
+.medal { font-size: 22px; }
+.lb-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 14px;
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+.lb-nick {
+  font-family: var(--font-display); font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.me-tag {
+  font-size: 9px; letter-spacing: 0.14em;
+  padding: 2px 6px; border-radius: 4px;
+  background: var(--accent); color: #fff;
+}
+.lb-stats {
+  font-size: 10px; color: var(--text-faint); letter-spacing: 0.08em;
+}
+.lb-points {
+  font-family: var(--font-display); font-weight: 700; font-size: 20px;
+  color: var(--accent); min-width: 44px; text-align: right;
+}
+
+.empty {
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.06em; color: var(--text-faint); padding: 20px 4px;
+}
+
+@media (max-aspect-ratio: 13/16) {
+  .auth-shell { grid-template-columns: 1fr; }
+  .tips-grid { grid-template-columns: 1fr; }
+  .tip-card.podium-card { grid-column: span 1; }
+  .crowd-grid { grid-template-columns: 1fr; }
+  .rh-title { font-size: 30px; }
+  .lb-row { grid-template-columns: 32px 28px 1fr auto; }
+  .lb-stats { display: none; }
+}
+</style>

@@ -27,7 +27,7 @@
             @mousedown.prevent
             @click="addDriver(d.abbr)"
           >
-            <span class="sug-photo" :style="{ '--dc': d.color }">
+            <span class="sug-photo" :style="`--dc:${d.color}`">
               <img v-if="d.headshot" :src="d.headshot" :alt="d.abbr" loading="lazy" />
               <span v-else>{{ d.abbr }}</span>
             </span>
@@ -48,7 +48,7 @@
           :key="d.abbr"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="{ '--dc': dcolor(d) }"
+          :style="`--dc:${dcolor(d)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -299,8 +299,9 @@ function onDrop(i: number) {
   resetDrag()
   if (from === null || from === i) return
   const arr = [...store.selectedDrivers]
-  const moved = arr.splice(from, 1)[0]
+  const moved = arr[from]
   if (moved === undefined) return
+  arr.splice(from, 1)
   arr.splice(i, 0, moved)
   store.selectedDrivers = arr
 }
@@ -552,6 +553,7 @@ function lineFor(d: DriverStanding): string {
 
 <style scoped>
 .panel {
+  --dc: var(--accent);
   animation: fade 0.4s ease both;
   display: flex;
   flex-direction: column;
