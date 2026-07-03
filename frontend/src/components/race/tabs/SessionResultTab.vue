@@ -22,42 +22,42 @@
       <div v-else class="table-wrap">
         <table class="result-table">
           <thead>
-            <tr>
-              <th class="col-pos">POS</th>
-              <th>FAHRER</th>
-              <th class="hide-sm">TEAM</th>
-              <th class="col-time">BEST LAP</th>
-              <th class="col-gap">RÜCKSTAND</th>
-            </tr>
+          <tr>
+            <th class="col-pos">POS</th>
+            <th>FAHRER</th>
+            <th class="hide-sm">TEAM</th>
+            <th class="col-time">BEST LAP</th>
+            <th class="col-gap">RÜCKSTAND</th>
+          </tr>
           </thead>
           <tbody>
-            <tr
-              v-for="r in activeSession.result"
-              :key="r.pos"
-              :class="{ 'row-out': r.dnf || r.dns || r.dsq }"
-            >
-              <td>
-                <span class="pos-badge" :class="posBadgeClass(r.pos)">{{ r.pos }}</span>
-              </td>
-              <td>
-                <div class="driver-cell">
-                  <span class="team-bar" :style="{ background: r.color }"></span>
-                  <div>
-                    <div class="driver-name">{{ r.name }}</div>
-                    <div class="driver-abbr">{{ r.abbr }}</div>
-                  </div>
+          <tr
+            v-for="r in activeSession.result"
+            :key="r.pos"
+            :class="{ 'row-out': r.dnf || r.dns || r.dsq }"
+          >
+            <td>
+              <span class="pos-badge" :class="posBadgeClass(r.pos)">{{ r.pos }}</span>
+            </td>
+            <td>
+              <div class="driver-cell">
+                <span class="team-bar" :style="{ background: r.color }"></span>
+                <div>
+                  <div class="driver-name">{{ r.name }}</div>
+                  <div class="driver-abbr">{{ r.abbr }}</div>
                 </div>
-              </td>
-              <td class="cell-dim hide-sm">{{ r.team }}</td>
-              <td class="cell-time">{{ r.bestLap }}</td>
-              <td class="cell-gap">
-                <span v-if="r.dnf" class="badge-out">DNF</span>
-                <span v-else-if="r.dns" class="badge-out">DNS</span>
-                <span v-else-if="r.dsq" class="badge-out">DSQ</span>
-                <span v-else-if="r.gap === 'POLE'" class="badge-pole">POLE</span>
-                <span v-else>{{ r.gap }}</span>
-              </td>
-            </tr>
+              </div>
+            </td>
+            <td class="cell-dim hide-sm">{{ r.team }}</td>
+            <td class="cell-time">{{ r.bestLap }}</td>
+            <td class="cell-gap">
+              <span v-if="r.dnf" class="badge-out">DNF</span>
+              <span v-else-if="r.dns" class="badge-out">DNS</span>
+              <span v-else-if="r.dsq" class="badge-out">DSQ</span>
+              <span v-else-if="r.gap === 'POLE'" class="badge-pole">POLE</span>
+              <span v-else>{{ r.gap }}</span>
+            </td>
+          </tr>
           </tbody>
         </table>
       </div>
@@ -67,7 +67,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { PracticeSession, SessionResultRow } from '@/types/f1'
+import type { PracticeSession } from '@/types/f1'
 
 const props = defineProps<{
   sessions: PracticeSession[]

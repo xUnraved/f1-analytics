@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record OpenF1LapDto(
         @JsonProperty("session_key") Integer sessionKey,
         @JsonProperty("driver_number") Integer driverNumber,
-        @JsonProperty("st_speed") Integer stSpeed
+        @JsonProperty("st_speed") Integer stSpeed,
+        @JsonProperty("lap_duration") Double lapDuration,
+        @JsonProperty("is_pit_out_lap") Boolean isPitOutLap
 ) {
 }

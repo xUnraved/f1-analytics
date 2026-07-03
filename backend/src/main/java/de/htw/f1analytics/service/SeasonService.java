@@ -271,6 +271,7 @@ public class SeasonService {
 
             Map<Integer, F1alyticsScore.ScoreCard> scoreByNum = Map.of();
             Map<Integer, Integer> maxSpeedByNum = new HashMap<>();
+            Map<Integer, Double> minLapByNum = new HashMap<>();
             if (!rows.isEmpty()) {
                 Map<Integer, Integer> gridPos = new HashMap<>();
                 Map<Integer, Double> qualiLap = new HashMap<>();
@@ -305,8 +306,13 @@ public class SeasonService {
                 scoreByNum = F1alyticsScore.scoreRace(scoreEntries);
 
                 for (OpenF1LapDto lap : fetch(() -> openF1Client.getLaps(rs.sessionKey()))) {
-                    if (lap.driverNumber() == null || lap.stSpeed() == null) continue;
-                    maxSpeedByNum.merge(lap.driverNumber(), lap.stSpeed(), Math::max);
+                    if (lap.driverNumber() == null) continue;
+                    if (lap.stSpeed() != null) {
+                        maxSpeedByNum.merge(lap.driverNumber(), lap.stSpeed(), Math::max);
+                    }
+                    if (lap.lapDuration() != null && !Boolean.TRUE.equals(lap.isPitOutLap())) {
+                        minLapByNum.merge(lap.driverNumber(), lap.lapDuration(), Math::min);
+                    }
                 }
             }
 
@@ -367,7 +373,29 @@ public class SeasonService {
                 }
             }
 
-            ResultRow fastest = result.isEmpty() ? null : result.get(0);
+            ResultRow fastest = null;
+            if (!minLapByNum.isEmpty()) {
+                Integer fastestNum = null;
+                double fastestTime = Double.MAX_VALUE;
+                for (Map.Entry<Integer, Double> e : minLapByNum.entrySet()) {
+                    if (e.getValue() < fastestTime) {
+                        fastestTime = e.getValue();
+                        fastestNum = e.getKey();
+                    }
+                }
+                if (fastestNum != null) {
+                    Accum fa = byNum.get(fastestNum);
+                    if (fa != null) {
+                        for (ResultRow rr : result) {
+                            if (rr.abbr().equals(fa.abbr)) {
+                                fastest = rr;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             races.add(new Race(
                     orElse(rs.location(), orElse(rs.circuitShortName(), "GP")),
                     orElse(rs.countryName(), "—"),

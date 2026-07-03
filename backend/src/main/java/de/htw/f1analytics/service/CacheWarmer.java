@@ -21,8 +21,7 @@ public class CacheWarmer {
     void onStart(@Observes StartupEvent ev) {
         int cur = Year.now().getValue();
         List<Integer> years = new ArrayList<>();
-        years.add(cur);
-        if (cur - 1 >= SeasonService.START_YEAR) years.add(cur - 1);
+        for (int y = cur; y >= SeasonService.START_YEAR; y--) years.add(y);
 
         Thread.ofVirtual().name("cache-warmer").start(() -> {
             for (int y : years) {

@@ -27,7 +27,7 @@
             @mousedown.prevent
             @click="addDriver(r.abbr)"
           >
-            <span class="sug-photo" :style="{ '--dc': r.color }">
+            <span class="sug-photo" :style="`--dc:${r.color}`">
               <img v-if="headshot(r.abbr)" :src="headshot(r.abbr)!" :alt="r.abbr" loading="lazy" />
               <span v-else>{{ r.abbr }}</span>
             </span>
@@ -48,7 +48,7 @@
           :key="r.abbr"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="{ '--dc': dcolor(r) }"
+          :style="`--dc:${dcolor(r)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -198,8 +198,9 @@ function onDrop(i: number) {
   resetDrag()
   if (from === null || from === i) return
   const arr = [...picked.value]
-  const moved = arr.splice(from, 1)[0]
+  const moved = arr[from]
   if (moved === undefined) return
+  arr.splice(from, 1)
   arr.splice(i, 0, moved)
   picked.value = arr
 }
@@ -277,7 +278,7 @@ const dmap = computed<Record<string, string>>(() => {
   for (const r of selected.value) {
     let c = r.color || '#999999'
     if (used.some((u) => dist(u, hexToRgb(c)) < 115)) {
-      let best = PALETTE[0]
+      let best: string = PALETTE[0] ?? '#888888'
       let bestMin = -1
       for (const p of PALETTE) {
         const prgb = hexToRgb(p)
@@ -301,6 +302,7 @@ function dcolor(r: RaceResultRow): string {
 
 <style scoped>
 .panel {
+  --dc: var(--accent);
   animation: fade 0.4s ease both;
 }
 @keyframes fade {
