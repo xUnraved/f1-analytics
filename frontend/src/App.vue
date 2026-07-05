@@ -2,11 +2,11 @@
   <div class="ambient" aria-hidden="true">
     <div class="rail left">
       <div class="rail-line"></div>
-      <div class="rail-text">FORMULA 1 · TELEMETRY SYSTEM</div>
+      <div class="rail-text">{{ t('app.tagline') }}</div>
     </div>
     <div class="rail right">
       <div class="rail-line"></div>
-      <div class="rail-text">DATA FEED · OPENF1 · FIA</div>
+      <div class="rail-text">{{ t('app.datafeed') }}</div>
     </div>
     <div class="scan"></div>
   </div>
@@ -16,14 +16,17 @@
 
   <footer class="app-footer">
     <div class="wrap">
-      <span>VUE 3 · PINIA · QUARKUS · POSTGRESQL</span>
-      <span>DATEN: OPENF1.ORG</span>
+      <span>{{ t('app.footer.tech') }}</span>
+      <span>{{ t('app.footer.data') }}</span>
     </div>
   </footer>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import TheHeader from '@/components/layout/TheHeader.vue'
+
+const { t } = useI18n()
 </script>
 
 <style scoped>

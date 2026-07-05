@@ -10,13 +10,13 @@
           v-model="query"
           type="text"
           class="search-input"
-          placeholder="Fahrer oder Team suchen …"
+          :placeholder="t('common.search')"
           @focus="focused = true"
           @blur="focused = false"
           @keydown.enter="addFirst"
           @keydown.esc="query = ''"
         />
-        <button v-if="query" type="button" class="search-clear" @click="query = ''" aria-label="Leeren">×</button>
+        <button v-if="query" type="button" class="search-clear" @click="query = ''" :aria-label="t('common.clear')">×</button>
 
         <div v-if="suggestions.length" class="suggest">
           <button
@@ -38,8 +38,8 @@
             <span class="sug-add">+</span>
           </button>
         </div>
-        <div v-else-if="focused && full" class="sug-note">Maximal 3 Fahrer — entferne einen, um zu tauschen.</div>
-        <div v-else-if="focused && query.trim()" class="sug-note">Kein Treffer für „{{ query.trim() }}".</div>
+        <div v-else-if="focused && full" class="sug-note">{{ t('common.maxDrivers') }}</div>
+        <div v-else-if="focused && query.trim()" class="sug-note">{{ t('common.noResultFor', { q: query.trim() }) }}</div>
       </div>
 
       <div class="tiles" :style="tilesCols">
@@ -69,10 +69,10 @@
             <span class="tile-score-val">{{ d.avgScore != null ? d.avgScore.toFixed(1) : '–' }}</span>
             <span class="tile-score-lbl">F1ALYTICS Ø</span>
           </span>
-          <button type="button" class="tile-x" @click.stop="removeDriver(d.abbr)" aria-label="Entfernen">×</button>
+          <button type="button" class="tile-x" @click.stop="removeDriver(d.abbr)" :aria-label="t('common.remove')">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
-          Suche oben nach einem Fahrer oder Team und füge bis zu 3 hinzu.
+          {{ t('common.addDriver') }}
         </div>
       </div>
     </div>
@@ -80,7 +80,7 @@
     <template v-if="selected.length">
       <div class="dash">
         <section class="card">
-          <div class="card-title">Leistungsprofil</div>
+          <div class="card-title">{{ t('drivers.performance') }}</div>
           <svg :viewBox="`0 0 ${VW} ${VH}`" width="100%" class="radar">
             <polygon v-for="t in rings" :key="t" :points="ringPoints(t)" class="ring" />
             <line
@@ -126,7 +126,7 @@
         </section>
 
         <section class="card">
-          <div class="card-title">Direktvergleich</div>
+          <div class="card-title">{{ t('teams.comparison') }}</div>
           <div class="bars">
             <div v-for="m in barMetrics" :key="m.l" class="bar-metric">
               <div class="bar-label">{{ m.l }}</div>
@@ -143,7 +143,7 @@
       </div>
 
       <section class="card">
-        <div class="card-title">Form pro Rennen</div>
+        <div class="card-title">{{ t('drivers.formPerRace') }}</div>
         <div class="forms">
           <div v-for="d in selected" :key="d.abbr" class="frow">
             <span class="fabbr" :style="{ color: dcolor(d) }">{{ d.abbr }}</span>
@@ -160,22 +160,22 @@
           </div>
         </div>
         <div v-if="!raceCount" class="fnone" style="margin-top: 8px">
-          Für diese Saison liegen noch keine F1alytics-Wertungen vor.
+          {{ t('drivers.noScores') }}
         </div>
         <div class="fscale">
-          <span>schwach</span>
+          <span>{{ t('drivers.weak') }}</span>
           <i style="background: #e11d48"></i>
           <i style="background: #f97316"></i>
           <i style="background: #eab308"></i>
           <i style="background: #65a30d"></i>
           <i style="background: #16a34a"></i>
-          <span>stark</span>
+          <span>{{ t('drivers.strong') }}</span>
         </div>
       </section>
 
       <div class="dash">
         <section class="card">
-          <div class="card-title">Weitere Werte</div>
+          <div class="card-title">{{ t('teams.moreStats') }}</div>
           <div class="grid" :style="gridCols">
             <div class="grow">
               <div class="glbl"></div>
@@ -191,17 +191,17 @@
         </section>
 
         <section class="card">
-          <div class="card-title">Saisonverlauf</div>
+          <div class="card-title">{{ t('drivers.seasonProgress') }}</div>
           <div class="prog-tabs">
             <button
-              v-for="t in trendTabs"
-              :key="t.k"
+              v-for="tabItem in trendTabs"
+              :key="tabItem.k"
               type="button"
               class="ptab"
-              :class="{ active: mode === t.k }"
-              @click="mode = t.k"
+              :class="{ active: mode === tabItem.k }"
+              @click="mode = tabItem.k"
             >
-              {{ t.l }}
+              {{ tabItem.l }}
             </button>
           </div>
           <svg :viewBox="`0 0 ${W} ${H}`" width="100%" class="trend">
@@ -231,8 +231,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import type { DriverStanding } from '@/types/f1'
+
+const { t } = useI18n()
 
 interface Metric {
   l: string
@@ -509,11 +512,11 @@ function labelAnchor(i: number): string {
   return 'middle'
 }
 
-const trendTabs = [
-  { k: 'cum' as const, l: 'PUNKTE KUMULIERT' },
-  { k: 'race' as const, l: 'PUNKTE / RENNEN' },
-  { k: 'score' as const, l: 'F1ALYTICS / RENNEN' },
-]
+const trendTabs = computed(() => [
+  { k: 'cum' as const, l: t('drivers.trend.cum') },
+  { k: 'race' as const, l: t('drivers.trend.race') },
+  { k: 'score' as const, l: t('drivers.trend.score') },
+])
 const mode = ref<'cum' | 'race' | 'score'>('cum')
 
 const W = 460

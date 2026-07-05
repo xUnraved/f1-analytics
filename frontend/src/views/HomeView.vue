@@ -1,26 +1,49 @@
 <template>
   <section class="wrap intro">
-    <span class="eyebrow">Saison-Analyse</span>
-    <h1 class="intro-title">SAISON <span>{{ store.year }}</span></h1>
+    <span class="eyebrow">{{ t('home.eyebrow') }}</span>
+    <h1 class="intro-title">{{ t('home.title') }} <span>{{ store.year }}</span></h1>
   </section>
 
   <section class="wrap hero">
     <div class="dash card">
       <div class="dash-head">
-        <span class="dash-tab clip-tab">SAISON-WAHL</span>
+        <span class="dash-tab clip-tab">{{ t('home.card.label') }}</span>
         <span class="dash-id mono">SYS//{{ store.year }}</span>
       </div>
       <SeasonWheel />
       <div class="readouts">
-        <div class="ro"><span>RENNEN</span><b>{{ store.races.length }}</b></div>
-        <div class="ro"><span>FAHRER</span><b>{{ store.drivers.length }}</b></div>
-        <div class="ro"><span>TEAMS</span><b>{{ store.teams.length }}</b></div>
+        <div class="ro"><span>{{ t('home.card.races') }}</span><b>{{ store.races.length }}</b></div>
+        <div class="ro"><span>{{ t('home.card.drivers') }}</span><b>{{ store.drivers.length }}</b></div>
+        <div class="ro"><span>{{ t('home.card.teams') }}</span><b>{{ store.teams.length }}</b></div>
       </div>
       <div v-if="store.loading" class="loading-bar">
-        <div class="loading-track"><div class="loading-fill"></div></div>
-        <span class="loading-label">Daten werden von OpenF1 geladen …</span>
+        <div v-if="store.liveSessionBlocked" class="live-blocked">
+          <span class="live-icon">&#9679;</span>
+          <div class="live-lines">
+            <span class="live-title">{{ t('home.liveBlocked.title') }}</span>
+            <span class="live-sub">{{ t('home.liveBlocked.detail') }}</span>
+          </div>
+        </div>
+        <template v-else>
+          <div class="progress-head">
+            <span class="loading-label">
+              <template v-if="store.totalRaces === 0">{{ t('home.loading.sessions') }}</template>
+              <template v-else>{{ t('home.loading.races', { loaded: store.races.length, total: store.totalRaces }) }}</template>
+            </span>
+            <span v-if="store.totalRaces > 0" class="loading-pct">{{ pct }}%</span>
+          </div>
+          <div class="loading-track">
+            <div
+              class="loading-fill"
+              :class="{ indeterminate: store.totalRaces === 0 }"
+              :style="store.totalRaces > 0 ? { width: pct + '%' } : {}"
+            ></div>
+          </div>
+          <span v-if="eta" class="loading-eta">{{ t('home.loading.eta', { time: eta }) }}</span>
+          <span v-else-if="store.totalRaces === 0" class="loading-eta">{{ t('home.loading.querying') }}</span>
+        </template>
       </div>
-      <div v-else class="enter-hint"><span class="arrow">↓</span> RENNEN ERKUNDEN</div>
+      <div v-else class="enter-hint"><span class="arrow">↓</span> {{ t('home.hint') }}</div>
     </div>
 
     <div class="cockpit">
@@ -41,14 +64,14 @@
     <div class="wrap">
       <div class="stabs">
         <button
-          v-for="t in tabs"
-          :key="t.key"
+          v-for="tabItem in tabs"
+          :key="tabItem.key"
           type="button"
           class="stab clip-tab"
-          :class="{ active: tab === t.key }"
-          @click="setTab(t.key)"
+          :class="{ active: tab === tabItem.key }"
+          @click="setTab(tabItem.key)"
         >
-          {{ t.label }}
+          {{ tabItem.label }}
         </button>
       </div>
 
@@ -57,13 +80,15 @@
       <SeasonStandings v-else-if="tab === 'standings'" />
       <DriversTab v-else-if="tab === 'drivers'" />
       <SeasonTeams v-else-if="tab === 'teams'" />
+      <QuizTab v-else-if="tab === 'quiz'" />
       <TippspielTab v-else />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import SeasonWheel from '@/components/season/SeasonWheel.vue'
 import GlobeView from '@/components/season/GlobeView.vue'
@@ -73,20 +98,55 @@ import DriversTab from '@/components/race/tabs/DriversTab.vue'
 import SeasonTeams from '@/components/season/SeasonTeams.vue'
 import SeasonStandings from '@/components/season/SeasonStandings.vue'
 import TippspielTab from '@/components/tippspiel/TippspielTab.vue'
+import QuizTab from '@/components/quiz/QuizTab.vue'
 
-type Tab = 'races' | 'drivers' | 'teams' | 'standings' | 'tippspiel'
+type Tab = 'races' | 'drivers' | 'teams' | 'standings' | 'tippspiel' | 'quiz'
 
+const { t } = useI18n()
 const store = useSeasonStore()
 const raceSectionEl = ref<HTMLElement | null>(null)
 const tab = ref<Tab>('races')
 
-const tabs: { key: Tab; label: string }[] = [
-  { key: 'races', label: 'RENNEN' },
-  { key: 'standings', label: 'WERTUNG' },
-  { key: 'drivers', label: 'FAHRER' },
-  { key: 'teams', label: 'TEAMS' },
-  { key: 'tippspiel', label: 'TIPPSPIEL' },
-]
+const loadStart = ref<number | null>(null)
+const nowMs = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | null = null
+
+const pct = computed(() => {
+  const total = store.totalRaces
+  const loaded = store.races.length
+  return total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
+})
+const eta = computed(() => {
+  if (!loadStart.value || store.races.length === 0 || store.totalRaces === 0) return null
+  const elapsed = (nowMs.value - loadStart.value) / 1000
+  const rate    = elapsed / store.races.length
+  const secs    = Math.round((store.totalRaces - store.races.length) * rate)
+  if (secs < 8) return null
+  return secs < 60 ? `${secs}s` : `${Math.round(secs / 60)}min`
+})
+
+watch(() => store.loading, (val) => {
+  if (val && loadStart.value === null) {
+    loadStart.value = Date.now()
+    nowTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
+  } else if (!val) {
+    loadStart.value = null
+    if (nowTimer !== null) { clearInterval(nowTimer); nowTimer = null }
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (nowTimer !== null) clearInterval(nowTimer)
+})
+
+const tabs = computed(() => [
+  { key: 'races' as Tab, label: t('home.tabs.races') },
+  { key: 'standings' as Tab, label: t('home.tabs.standings') },
+  { key: 'drivers' as Tab, label: t('home.tabs.drivers') },
+  { key: 'teams' as Tab, label: t('home.tabs.teams') },
+  { key: 'quiz' as Tab, label: t('home.tabs.quiz') },
+  { key: 'tippspiel' as Tab, label: t('home.tabs.tippspiel') },
+])
 
 const rings = [30, 48, 66, 84, 96]
 const spokes = Array.from({ length: 12 }, (_, i) => {
@@ -225,27 +285,13 @@ watch(
   margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
 }
 
-.loading-track {
-  height: 2px;
-  background: var(--line);
-  border-radius: 1px;
-  overflow: hidden;
-}
-
-.loading-fill {
-  height: 100%;
-  width: 40%;
-  background: var(--accent);
-  border-radius: 1px;
-  animation: scan 1.6s ease-in-out infinite;
-}
-
-@keyframes scan {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
+.progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .loading-label {
@@ -253,6 +299,90 @@ watch(
   font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--text-faint);
+}
+
+.loading-pct {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.loading-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.loading-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.loading-fill.indeterminate {
+  width: 38% !important;
+  animation: scan 1.6s ease-in-out infinite;
+  transition: none;
+}
+
+@keyframes scan {
+  0%   { transform: translateX(-160%); }
+  100% { transform: translateX(390%); }
+}
+
+.loading-eta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.live-blocked {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0 4px;
+}
+
+.live-icon {
+  color: #e10600;
+  font-size: 10px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.live-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.live-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.live-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--text-faint);
+  opacity: 0.75;
 }
 
 .enter-hint {

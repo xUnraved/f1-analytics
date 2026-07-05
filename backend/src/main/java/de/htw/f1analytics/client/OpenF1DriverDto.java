@@ -15,6 +15,7 @@ public record OpenF1DriverDto(
         @JsonProperty("team_name") String teamName,
         @JsonProperty("team_colour") String teamColour,
         @JsonProperty("headshot_url") String headshotUrl,
+        @JsonProperty("country_code") String countryCode,
         @JsonProperty("meeting_key") Integer meetingKey
 ) {
 }

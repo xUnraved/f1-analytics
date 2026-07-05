@@ -34,4 +34,9 @@ public interface OpenF1Client {
     @GET
     @Path("/laps")
     List<OpenF1LapDto> getLaps(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/location")
+    List<OpenF1LocationDto> getLocations(@QueryParam("session_key") int sessionKey,
+                                         @QueryParam("driver_number") int driverNumber);
 }

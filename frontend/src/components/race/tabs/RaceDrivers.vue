@@ -10,13 +10,13 @@
           v-model="query"
           type="text"
           class="search-input"
-          placeholder="Fahrer suchen …"
+          :placeholder="t('common.search')"
           @focus="focused = true"
           @blur="focused = false"
           @keydown.enter="addFirst"
           @keydown.esc="query = ''"
         />
-        <button v-if="query" type="button" class="search-clear" @click="query = ''" aria-label="Leeren">×</button>
+        <button v-if="query" type="button" class="search-clear" @click="query = ''" :aria-label="t('common.clear')">×</button>
 
         <div v-if="suggestions.length" class="suggest">
           <button
@@ -38,8 +38,8 @@
             <span class="sug-add">+</span>
           </button>
         </div>
-        <div v-else-if="focused && full" class="sug-note">Maximal 3 Fahrer — entferne einen, um zu tauschen.</div>
-        <div v-else-if="focused && query.trim()" class="sug-note">Kein Treffer für „{{ query.trim() }}".</div>
+        <div v-else-if="focused && full" class="sug-note">{{ t('common.maxDrivers') }}</div>
+        <div v-else-if="focused && query.trim()" class="sug-note">{{ t('common.noResultFor', { q: query.trim() }) }}</div>
       </div>
 
       <div class="tiles" :style="tilesCols">
@@ -69,10 +69,10 @@
             <span class="tile-score-val">{{ scoreText(r) }}</span>
             <span class="tile-score-lbl">F1ALYTICS</span>
           </span>
-          <button type="button" class="tile-x" @click.stop="removeDriver(r.abbr)" aria-label="Entfernen">×</button>
+          <button type="button" class="tile-x" @click.stop="removeDriver(r.abbr)" :aria-label="t('common.remove')">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
-          Suche oben nach einem Fahrer und füge bis zu 3 hinzu.
+          {{ t('common.addDriver') }}
         </div>
       </div>
     </div>
@@ -124,10 +124,12 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import type { RaceResultRow, ScoreCard } from '@/types/f1'
 
 const props = defineProps<{ result: RaceResultRow[] }>()
+const { t } = useI18n()
 const store = useSeasonStore()
 
 interface Metric {

@@ -8,6 +8,7 @@ import de.htw.f1analytics.client.OpenF1MeetingDto;
 import de.htw.f1analytics.client.OpenF1ResultDto;
 import de.htw.f1analytics.client.OpenF1SessionDto;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
@@ -35,6 +36,18 @@ public class SeasonService {
     @Inject
     SeasonCacheStore cacheStore;
 
+    @Inject
+    RaceCacheStore raceCacheStore;
+
+    @Inject
+    F1DataStore dataStore;
+
+    @Inject
+    QuizService quizService;
+
+    @Inject
+    ReplayService replayService;
+
     public record ResultRow(String abbr, String name, String team, String color,
                             int pos, int pts, String gapText, boolean dnf,
                             boolean dns, boolean dsq, Integer laps,
@@ -51,7 +64,8 @@ public class SeasonService {
                        List<ResultRow> result, ResultRow fastestLap,
                        String circuitImage, String countryFlag,
                        List<SessionResultRow> qualifyingResult,
-                       List<PracticeSession> practiceResults) {}
+                       List<PracticeSession> practiceResults,
+                       int sessionKey, String sessionDateStart) {}
 
     public record DriverStanding(String abbr, String name, String team, int num, String color,
                                  int points, int wins, int podiums, int dnf,
@@ -64,7 +78,8 @@ public class SeasonService {
                                List<DriverStanding> drivers) {}
 
     public record SeasonStats(List<Race> races, List<DriverStanding> drivers,
-                              List<TeamStanding> teams, boolean loading, int totalRaces) {}
+                              List<TeamStanding> teams, boolean loading, int totalRaces,
+                              boolean liveSessionBlocked) {}
 
     static final int START_YEAR = 2023;
     private static final int[] POINTS = {25, 18, 15, 12, 10, 8, 6, 4, 2, 1};
@@ -72,7 +87,14 @@ public class SeasonService {
     private static final long THROTTLE_MS = 2500;
     private static final int MAX_RETRY = 4;
 
+    private static final org.jboss.logging.Logger LOG = org.jboss.logging.Logger.getLogger(SeasonService.class);
+
+    private static final long API_COOLDOWN_MS = 2 * 60 * 1000L; // 2 Minuten Pause nach 401/leerem API-Ergebnis
+
     private final Map<Integer, SeasonStats> cache = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> apiBlockedUntil = new ConcurrentHashMap<>();
+    private final Map<Integer, Boolean> liveBlockedYears = new ConcurrentHashMap<>();
+    private volatile boolean lastFetchWas401 = false;
 
     private final java.util.Set<Integer> fetching = ConcurrentHashMap.newKeySet();
 
@@ -131,7 +153,45 @@ public class SeasonService {
 
     public void clearCache(int year) {
         cache.remove(year);
+        fetching.remove(year);
         cacheStore.delete(year);
+        raceCacheStore.deleteForYear(year);
+        dataStore.deleteYear(year);
+    }
+
+    /** Löscht nur das Ergebnis einer einzelnen Session und invalidiert den Saison-Cache. */
+    public void clearRace(int sessionKey, int year) {
+        dataStore.deleteResults(sessionKey);
+        raceCacheStore.delete(sessionKey);
+        cache.remove(year);
+        fetching.remove(year);
+        cacheStore.delete(year);
+    }
+
+    /**
+     * Löscht nur diese eine Session aus der DB, holt sie synchron von der OpenF1-API neu
+     * und gibt die vollständig aktualisierte SeasonStats zurück — kein Polling nötig.
+     */
+    @ActivateRequestContext
+    public SeasonStats refreshSingleRace(int sessionKey, int year) {
+        dataStore.deleteResults(sessionKey);
+        raceCacheStore.delete(sessionKey);
+        cache.remove(year);
+        fetching.remove(year);
+        cacheStore.delete(year);
+        try {
+            API_SLOT.acquire();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return new SeasonStats(List.of(), List.of(), List.of(), false, 0, false);
+        }
+        try {
+            buildAndCacheInternal(year);
+        } finally {
+            API_SLOT.release();
+        }
+        SeasonStats result = cache.get(year);
+        return result != null ? result : new SeasonStats(List.of(), List.of(), List.of(), false, 0, false);
     }
 
     public List<Integer> years() {
@@ -152,19 +212,32 @@ public class SeasonService {
             return fromDb;
         }
 
+        // API-Cooldown: nicht alle 6s erneut versuchen wenn API geblockt ist
+        Long blockedUntil = apiBlockedUntil.get(year);
+        if (blockedUntil != null && System.currentTimeMillis() < blockedUntil) {
+            boolean liveBlocked = Boolean.TRUE.equals(liveBlockedYears.get(year));
+            return new SeasonStats(List.of(), List.of(), List.of(), true, 0, liveBlocked);
+        }
+
         if (fetching.add(year)) {
             Thread.ofVirtual().name("season-fetch-" + year).start(() -> {
                 try {
-                    buildAndCache(year);
+                    io.quarkus.arc.Arc.container().requestContext().activate();
+                    try {
+                        buildAndCache(year);
+                    } finally {
+                        try { io.quarkus.arc.Arc.container().requestContext().terminate(); } catch (Exception ignored) {}
+                    }
                 } finally {
-                    fetching.remove(year);
+                    fetching.remove(year);  // immer ausführen, auch bei Arc-Fehler
                 }
             });
         }
 
-        return new SeasonStats(List.of(), List.of(), List.of(), true, 0);
+        return new SeasonStats(List.of(), List.of(), List.of(), true, 0, false);
     }
 
+    @ActivateRequestContext
     public void ensureCached(int year) {
         if (cache.containsKey(year)) return;
         SeasonStats fromDb = cacheStore.load(year);
@@ -197,214 +270,319 @@ public class SeasonService {
 
     private void buildAndCacheInternal(int year) {
 
+        List<de.htw.f1analytics.domain.F1SessionEntity> dbSessions =
+                de.htw.f1analytics.domain.F1SessionEntity.list("year = ?1 order by dateStart", year);
+
         Map<String, String> circuitImages = new LinkedHashMap<>();
-        Map<String, String> countryFlags = new LinkedHashMap<>();
-        for (OpenF1MeetingDto m : fetch(() -> openF1Client.getMeetings(year))) {
-            if (m.location() == null) continue;
-            if (m.circuitImage() != null) circuitImages.put(m.location(), m.circuitImage());
-            if (m.countryFlag() != null) countryFlags.put(m.location(), m.countryFlag());
+        Map<String, String> countryFlags  = new LinkedHashMap<>();
+
+        if (dbSessions.isEmpty()) {
+            for (OpenF1MeetingDto m : fetch(() -> openF1Client.getMeetings(year))) {
+                if (m.location() == null) continue;
+                if (m.circuitImage() != null) circuitImages.put(m.location(), m.circuitImage());
+                if (m.countryFlag()  != null) countryFlags.put(m.location(), m.countryFlag());
+            }
+            List<OpenF1SessionDto> apiSessions = fetch(() -> openF1Client.getSessions(year));
+            if (apiSessions.isEmpty()) {
+                if (lastFetchWas401) {
+                    LOG.warnf("Season %d: Live-Session läuft – API-Zugriff gesperrt. Nächster Versuch in %.0f Minuten.", year, API_COOLDOWN_MS / 60000.0);
+                    liveBlockedYears.put(year, true);
+                } else {
+                    LOG.warnf("Season %d: API lieferte keine Sessions. Nächster Versuch in %.0f Minuten.", year, API_COOLDOWN_MS / 60000.0);
+                }
+                apiBlockedUntil.put(year, System.currentTimeMillis() + API_COOLDOWN_MS);
+                return;
+            }
+            apiBlockedUntil.remove(year);
+            liveBlockedYears.remove(year);
+            for (OpenF1SessionDto s : apiSessions) {
+                if (s.sessionKey() == null) continue;
+                double[] cc = COORDS.getOrDefault(orElse(s.location(), orElse(s.circuitShortName(), "")), new double[]{0, 0});
+                dataStore.saveSession(F1DataStore.fromDto(s, year,
+                        circuitImages.getOrDefault(s.location(), null),
+                        countryFlags.getOrDefault(s.location(), null),
+                        cc[0], cc[1]));
+            }
+            dbSessions = de.htw.f1analytics.domain.F1SessionEntity.list("year = ?1 order by dateStart", year);
         }
 
-        List<OpenF1SessionDto> sessions = fetch(() -> openF1Client.getSessions(year));
+        for (de.htw.f1analytics.domain.F1SessionEntity s : dbSessions) {
+            if (s.location == null) continue;
+            if (s.circuitImage != null) circuitImages.put(s.location, s.circuitImage);
+            if (s.countryFlag  != null) countryFlags.put(s.location, s.countryFlag);
+        }
 
         Map<Integer, Integer> qualiByMeeting = new LinkedHashMap<>();
-        Map<Integer, List<OpenF1SessionDto>> practicesByMeeting = new LinkedHashMap<>();
-        for (OpenF1SessionDto s : sessions) {
-            if (s.sessionKey() == null || s.meetingKey() == null) continue;
-            String name = s.sessionName();
+        Map<Integer, List<de.htw.f1analytics.domain.F1SessionEntity>> practicesByMeeting = new LinkedHashMap<>();
+        for (de.htw.f1analytics.domain.F1SessionEntity s : dbSessions) {
+            if (s.meetingKey == null) continue;
+            String name = s.sessionName;
             if ("Qualifying".equals(name) || "Sprint Qualifying".equals(name) || "Sprint Shootout".equals(name)) {
-                qualiByMeeting.put(s.meetingKey(), s.sessionKey());
+                qualiByMeeting.put(s.meetingKey, s.sessionKey);
             } else if (name != null && name.startsWith("Practice")) {
-                practicesByMeeting.computeIfAbsent(s.meetingKey(), k -> new ArrayList<>()).add(s);
+                practicesByMeeting.computeIfAbsent(s.meetingKey, k -> new ArrayList<>()).add(s);
             }
         }
 
-        List<OpenF1SessionDto> raceSessions = sessions.stream()
-                .filter(s -> s.sessionKey() != null && "Race".equals(s.sessionName()))
-                .sorted(Comparator.comparing(s -> s.dateStart() == null ? "" : s.dateStart()))
+        List<de.htw.f1analytics.domain.F1SessionEntity> raceSessions = dbSessions.stream()
+                .filter(s -> "Race".equals(s.sessionName))
+                .sorted(Comparator.comparing(s -> s.dateStart == null ? "" : s.dateStart))
                 .toList();
 
         Map<Integer, Accum> byNum = new LinkedHashMap<>();
 
-        if (!raceSessions.isEmpty()) {
-            OpenF1SessionDto refSession = raceSessions.get(raceSessions.size() - 1);
-            for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(refSession.sessionKey()))) {
-                if (d.driverNumber() == null) continue;
-                Accum a = byNum.computeIfAbsent(d.driverNumber(), k -> new Accum());
-                a.num = d.driverNumber();
-                a.abbr = orElse(d.nameAcronym(), "#" + d.driverNumber());
-                a.name = orElse(d.fullName(), a.abbr);
-                a.team = orElse(d.teamName(), "—");
-                a.color = d.teamColour() != null ? "#" + d.teamColour() : "#888888";
-                a.headshot = d.headshotUrl();
-            }
-        }
-
         LocalDate today = LocalDate.now();
         List<Race> races = new ArrayList<>();
         int round = 0;
+        int totalRaceSessions = raceSessions.size();
 
-        for (OpenF1SessionDto rs : raceSessions) {
-            List<OpenF1ResultDto> rows = fetch(() -> openF1Client.getResults(rs.sessionKey())).stream()
-                    .filter(r -> r.position() != null && r.driverNumber() != null)
-                    .sorted(Comparator.comparingInt(OpenF1ResultDto::position))
-                    .toList();
+        for (de.htw.f1analytics.domain.F1SessionEntity rs : raceSessions) {
 
-            java.util.Set<Integer> unknownNums = new java.util.HashSet<>();
-            for (OpenF1ResultDto r : rows) {
-                if (r.driverNumber() != null && !byNum.containsKey(r.driverNumber())) {
-                    unknownNums.add(r.driverNumber());
+            List<ResultRow> result;
+            ResultRow fastest = null;
+            boolean fromApi;
+
+            // ── 1. Einzelrennen-Cache (race_cache) prüfen ──────────────────────────
+            java.util.Optional<Race> cachedRace = raceCacheStore.load(rs.sessionKey);
+            if (cachedRace.isPresent()) {
+                Race cr = cachedRace.get();
+                // byNum aus f1_result aufbauen (für korrekte Fahrerwertung)
+                if (dataStore.resultsExistForSession(rs.sessionKey)) {
+                    // Scores aus dem Race-Cache für byNum merken
+                    Map<String, Double> scoreByAbbr = new HashMap<>();
+                    for (ResultRow rr : cr.result()) {
+                        if (rr.score() != null) scoreByAbbr.put(rr.abbr(), rr.score().score());
+                    }
+                    for (de.htw.f1analytics.domain.F1ResultEntity r : dataStore.getResults(rs.sessionKey)) {
+                        Accum a = byNum.computeIfAbsent(r.driverNumber, k -> {
+                            Accum x = new Accum(); x.num = r.driverNumber;
+                            x.abbr = r.abbr; x.name = r.name; x.team = r.team; x.color = r.color;
+                            return x;
+                        });
+                        a.abbr = r.abbr; a.name = r.name; a.team = r.team; a.color = r.color;
+                        boolean out = r.dnf || r.dns || r.dsq;
+                        int pts = r.pts != null ? r.pts : 0;
+                        if (r.dnf) a.dnf++;
+                        if (!out) {
+                            a.points += pts;
+                            if (r.pos == 1) a.wins++;
+                            if (r.pos <= 3) a.podiums++;
+                            a.finishes.add(r.pos);
+                        }
+                        Double s = scoreByAbbr.get(r.abbr);
+                        if (s != null) a.scores.add(s);
+                    }
                 }
+                round++;
+                for (Accum a : byNum.values()) a.cum.add(a.points);
+                races.add(cr);
+                cache.put(year, new SeasonStats(List.copyOf(races), List.of(), List.of(), true, totalRaceSessions, false));
+                continue;
             }
-            if (!unknownNums.isEmpty()) {
-                for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(rs.sessionKey()))) {
-                    if (d.driverNumber() == null || !unknownNums.contains(d.driverNumber())) continue;
-                    Accum a = byNum.computeIfAbsent(d.driverNumber(), k -> new Accum());
-                    a.num = d.driverNumber();
-                    a.abbr = orElse(d.nameAcronym(), "#" + d.driverNumber());
-                    a.name = orElse(d.fullName(), a.abbr);
-                    a.team = orElse(d.teamName(), "—");
-                    a.color = d.teamColour() != null ? "#" + d.teamColour() : "#888888";
-                    a.headshot = d.headshotUrl();
+
+            if (dataStore.resultsExistForSession(rs.sessionKey)) {
+                fromApi = false;
+                List<de.htw.f1analytics.domain.F1ResultEntity> dbRows = dataStore.getResults(rs.sessionKey);
+                result = new ArrayList<>();
+                for (de.htw.f1analytics.domain.F1ResultEntity r : dbRows) {
+                    Accum a = byNum.computeIfAbsent(r.driverNumber, k -> {
+                        Accum x = new Accum();
+                        x.num = r.driverNumber;
+                        x.abbr = r.abbr; x.name = r.name;
+                        x.team = r.team; x.color = r.color;
+                        return x;
+                    });
+                    a.abbr = r.abbr; a.name = r.name; a.team = r.team; a.color = r.color;
+                    int pos = r.pos;
+                    int pts = r.pts != null ? r.pts : 0;
+                    boolean out = r.dnf || r.dns || r.dsq;
+
+                    if (r.dnf) a.dnf++;
+                    if (!out) {
+                        a.points += pts;
+                        if (pos == 1) a.wins++;
+                        if (pos <= 3) a.podiums++;
+                        a.finishes.add(pos);
+                    }
+                    result.add(new ResultRow(r.abbr, r.name, r.team, r.color,
+                            pos, pts, r.gapText != null ? r.gapText : "—",
+                            r.dnf, r.dns, r.dsq, r.laps, null));
                 }
-            }
 
-            Map<Integer, F1alyticsScore.ScoreCard> scoreByNum = Map.of();
-            Map<Integer, Integer> maxSpeedByNum = new HashMap<>();
-            Map<Integer, Double> minLapByNum = new HashMap<>();
-            if (!rows.isEmpty()) {
-                Map<Integer, Integer> gridPos = new HashMap<>();
-                Map<Integer, Double> qualiLap = new HashMap<>();
+            } else {
+                fromApi = true;
+                List<OpenF1ResultDto> rows = fetch(() -> openF1Client.getResults(rs.sessionKey)).stream()
+                        .filter(r -> r.position() != null && r.driverNumber() != null)
+                        .sorted(Comparator.comparingInt(OpenF1ResultDto::position))
+                        .toList();
 
-                Integer qKey = rs.meetingKey() != null ? qualiByMeeting.get(rs.meetingKey()) : null;
-                if (qKey != null) {
-                    for (OpenF1ResultDto q : fetch(() -> openF1Client.getResults(qKey))) {
-                        if (q.driverNumber() != null && q.position() != null) {
-                            gridPos.put(q.driverNumber(), q.position());
+                java.util.Set<Integer> unknownNums = new java.util.HashSet<>();
+                for (OpenF1ResultDto r : rows) {
+                    if (r.driverNumber() != null && !byNum.containsKey(r.driverNumber())) {
+                        unknownNums.add(r.driverNumber());
+                    }
+                }
+                if (!unknownNums.isEmpty()) {
+                    for (OpenF1DriverDto d : fetch(() -> openF1Client.getDrivers(rs.sessionKey))) {
+                        if (d.driverNumber() == null || !unknownNums.contains(d.driverNumber())) continue;
+                        Accum a = byNum.computeIfAbsent(d.driverNumber(), k -> new Accum());
+                        a.num = d.driverNumber();
+                        a.abbr = orElse(d.nameAcronym(), "#" + d.driverNumber());
+                        a.name = orElse(d.fullName(), a.abbr);
+                        a.team = orElse(d.teamName(), "—");
+                        a.color = d.teamColour() != null ? "#" + d.teamColour() : "#888888";
+                        a.headshot = d.headshotUrl();
+                        quizService.saveDriverIfAbsent(d);
+                    }
+                }
+
+                Map<Integer, F1alyticsScore.ScoreCard> scoreByNum = Map.of();
+                Map<Integer, Integer> maxSpeedByNum = new HashMap<>();
+                Map<Integer, Double> minLapByNum = new HashMap<>();
+                if (!rows.isEmpty()) {
+                    Map<Integer, Integer> gridPos = new HashMap<>();
+                    Map<Integer, Double> qualiLap = new HashMap<>();
+
+                    Integer qKey = rs.meetingKey != null ? qualiByMeeting.get(rs.meetingKey) : null;
+                    if (qKey != null) {
+                        for (OpenF1ResultDto q : fetch(() -> openF1Client.getResults(qKey))) {
+                            if (q.driverNumber() != null && q.position() != null) {
+                                gridPos.put(q.driverNumber(), q.position());
+                            }
+                        }
+                    }
+                    if (gridPos.isEmpty()) {
+                        for (OpenF1GridDto g : fetch(() -> openF1Client.getStartingGrid(rs.sessionKey))) {
+                            if (g.driverNumber() == null) continue;
+                            if (g.position() != null) gridPos.put(g.driverNumber(), g.position());
+                            if (g.lapDuration() != null) qualiLap.put(g.driverNumber(), g.lapDuration());
+                        }
+                    }
+
+                    List<F1alyticsScore.Entry> scoreEntries = new ArrayList<>();
+                    for (OpenF1ResultDto sr : rows) {
+                        int num = sr.driverNumber();
+                        Accum acc = byNum.get(num);
+                        scoreEntries.add(new F1alyticsScore.Entry(
+                                num, acc != null ? acc.team : "—", sr.position(),
+                                gridPos.get(num), qualiLap.get(num),
+                                Boolean.TRUE.equals(sr.dnf()),
+                                Boolean.TRUE.equals(sr.dns()),
+                                Boolean.TRUE.equals(sr.dsq())));
+                    }
+                    scoreByNum = F1alyticsScore.scoreRace(scoreEntries);
+
+                    for (OpenF1LapDto lap : fetch(() -> openF1Client.getLaps(rs.sessionKey))) {
+                        if (lap.driverNumber() == null) continue;
+                        if (lap.stSpeed() != null) {
+                            maxSpeedByNum.merge(lap.driverNumber(), lap.stSpeed(), Math::max);
+                        }
+                        if (lap.lapDuration() != null && !Boolean.TRUE.equals(lap.isPitOutLap())) {
+                            minLapByNum.merge(lap.driverNumber(), lap.lapDuration(), Math::min);
                         }
                     }
                 }
-                if (gridPos.isEmpty()) {
-                    for (OpenF1GridDto g : fetch(() -> openF1Client.getStartingGrid(rs.sessionKey()))) {
-                        if (g.driverNumber() == null) continue;
-                        if (g.position() != null) gridPos.put(g.driverNumber(), g.position());
-                        if (g.lapDuration() != null) qualiLap.put(g.driverNumber(), g.lapDuration());
+
+                result = new ArrayList<>();
+                List<de.htw.f1analytics.domain.F1ResultEntity> toSave = new ArrayList<>();
+                for (OpenF1ResultDto r : rows) {
+                    int num = r.driverNumber();
+                    Accum a = byNum.computeIfAbsent(num, k -> {
+                        Accum x = new Accum();
+                        x.num = num; x.abbr = "#" + num; x.name = "#" + num;
+                        x.team = "—"; x.color = "#888888";
+                        return x;
+                    });
+                    int pos = r.position();
+                    boolean dnf = Boolean.TRUE.equals(r.dnf());
+                    boolean dns = Boolean.TRUE.equals(r.dns());
+                    boolean dsq = Boolean.TRUE.equals(r.dsq());
+                    boolean out = dnf || dns || dsq;
+                    int pts = (!out && pos >= 1 && pos <= POINTS.length) ? POINTS[pos - 1] : 0;
+
+                    if (dnf) a.dnf++;
+                    if (!out) {
+                        a.points += pts;
+                        if (pos == 1) a.wins++;
+                        if (pos <= 3) a.podiums++;
+                        a.finishes.add(pos);
                     }
-                }
+                    F1alyticsScore.ScoreCard card = scoreByNum.get(num);
+                    if (card != null) a.scores.add(card.score());
+                    Integer ts = maxSpeedByNum.get(num);
+                    if (ts != null) a.topSpeeds.add(ts);
+                    result.add(new ResultRow(a.abbr, a.name, a.team, a.color, pos, pts,
+                            gapText(pos, out, r), dnf, dns, dsq, r.numberOfLaps(), card));
 
-                List<F1alyticsScore.Entry> scoreEntries = new ArrayList<>();
-                for (OpenF1ResultDto sr : rows) {
-                    int num = sr.driverNumber();
-                    Accum acc = byNum.get(num);
-                    scoreEntries.add(new F1alyticsScore.Entry(
-                            num, acc != null ? acc.team : "—", sr.position(),
-                            gridPos.get(num), qualiLap.get(num),
-                            Boolean.TRUE.equals(sr.dnf()),
-                            Boolean.TRUE.equals(sr.dns()),
-                            Boolean.TRUE.equals(sr.dsq())));
+                    toSave.add(F1DataStore.raceResult(rs.sessionKey, num,
+                            a.abbr, a.name, a.team, a.color,
+                            pos, pts, gapText(pos, out, r),
+                            dnf, dns, dsq, r.numberOfLaps()));
                 }
-                scoreByNum = F1alyticsScore.scoreRace(scoreEntries);
+                if (!toSave.isEmpty()) dataStore.saveResults(toSave);
 
-                for (OpenF1LapDto lap : fetch(() -> openF1Client.getLaps(rs.sessionKey()))) {
-                    if (lap.driverNumber() == null) continue;
-                    if (lap.stSpeed() != null) {
-                        maxSpeedByNum.merge(lap.driverNumber(), lap.stSpeed(), Math::max);
+                // Fastest lap
+                if (!minLapByNum.isEmpty()) {
+                    Integer fastestNum = null;
+                    double fastestTime = Double.MAX_VALUE;
+                    for (Map.Entry<Integer, Double> e : minLapByNum.entrySet()) {
+                        if (e.getValue() < fastestTime) { fastestTime = e.getValue(); fastestNum = e.getKey(); }
                     }
-                    if (lap.lapDuration() != null && !Boolean.TRUE.equals(lap.isPitOutLap())) {
-                        minLapByNum.merge(lap.driverNumber(), lap.lapDuration(), Math::min);
-                    }
-                }
-            }
-
-            List<ResultRow> result = new ArrayList<>();
-            for (OpenF1ResultDto r : rows) {
-                int num = r.driverNumber();
-                Accum a = byNum.computeIfAbsent(num, k -> {
-                    Accum x = new Accum();
-                    x.num = num; x.abbr = "#" + num; x.name = "#" + num;
-                    x.team = "—"; x.color = "#888888";
-                    return x;
-                });
-                int pos = r.position();
-                boolean dnf = Boolean.TRUE.equals(r.dnf());
-                boolean dns = Boolean.TRUE.equals(r.dns());
-                boolean dsq = Boolean.TRUE.equals(r.dsq());
-                boolean out = dnf || dns || dsq;
-                int pts = (!out && pos >= 1 && pos <= POINTS.length) ? POINTS[pos - 1] : 0;
-
-                if (dnf) a.dnf++;
-                if (!out) {
-                    a.points += pts;
-                    if (pos == 1) a.wins++;
-                    if (pos <= 3) a.podiums++;
-                    a.finishes.add(pos);
-                }
-                F1alyticsScore.ScoreCard card = scoreByNum.get(num);
-                if (card != null) a.scores.add(card.score());
-                Integer ts = maxSpeedByNum.get(num);
-                if (ts != null) a.topSpeeds.add(ts);
-                result.add(new ResultRow(a.abbr, a.name, a.team, a.color, pos, pts,
-                        gapText(pos, out, r), dnf, dns, dsq, r.numberOfLaps(), card));
-            }
-
-            boolean completed = !result.isEmpty();
-            LocalDate d = parseDate(rs.dateStart());
-            boolean future = d == null || !d.isBefore(today);
-
-            if (!completed && !future) continue;
-
-            round++;
-
-            for (Accum a : byNum.values()) a.cum.add(a.points);
-
-            double[] cc = COORDS.getOrDefault(orElse(rs.location(), orElse(rs.circuitShortName(), "")), new double[]{0, 0});
-            String imgUrl = circuitImages.getOrDefault(rs.location(), null);
-            String flagUrl = countryFlags.getOrDefault(rs.location(), null);
-
-            List<SessionResultRow> qualifyingResult = List.of();
-            List<PracticeSession> practiceResults = List.of();
-            if (completed) {
-                Integer qualiKey = rs.meetingKey() != null ? qualiByMeeting.get(rs.meetingKey()) : null;
-                if (qualiKey != null) qualifyingResult = buildSessionRows(qualiKey, byNum, true);
-
-                practiceResults = new ArrayList<>();
-                for (OpenF1SessionDto p : practicesByMeeting.getOrDefault(rs.meetingKey(), List.of())) {
-                    practiceResults.add(new PracticeSession(p.sessionName(), buildSessionRows(p.sessionKey(), byNum, false)));
-                }
-            }
-
-            ResultRow fastest = null;
-            if (!minLapByNum.isEmpty()) {
-                Integer fastestNum = null;
-                double fastestTime = Double.MAX_VALUE;
-                for (Map.Entry<Integer, Double> e : minLapByNum.entrySet()) {
-                    if (e.getValue() < fastestTime) {
-                        fastestTime = e.getValue();
-                        fastestNum = e.getKey();
-                    }
-                }
-                if (fastestNum != null) {
-                    Accum fa = byNum.get(fastestNum);
-                    if (fa != null) {
-                        for (ResultRow rr : result) {
-                            if (rr.abbr().equals(fa.abbr)) {
-                                fastest = rr;
-                                break;
+                    if (fastestNum != null) {
+                        Accum fa = byNum.get(fastestNum);
+                        if (fa != null) {
+                            for (ResultRow rr : result) {
+                                if (rr.abbr().equals(fa.abbr)) { fastest = rr; break; }
                             }
                         }
                     }
                 }
             }
 
-            races.add(new Race(
-                    orElse(rs.location(), orElse(rs.circuitShortName(), "GP")),
-                    orElse(rs.countryName(), "—"),
-                    orElse(rs.circuitShortName(), "—"),
-                    cc[0], cc[1],
-                    rs.dateStart() == null ? "" : rs.dateStart().substring(0, Math.min(10, rs.dateStart().length())),
-                    round, completed, result, fastest, imgUrl, flagUrl, qualifyingResult, practiceResults));
+            boolean completed = !result.isEmpty();
+            LocalDate d = parseDate(rs.dateStart);
+            boolean future = d == null || !d.isBefore(today);
 
-            cache.put(year, new SeasonStats(List.copyOf(races), List.of(), List.of(), true, raceSessions.size()));
+            if (!completed && !future) continue;
+
+            round++;
+            for (Accum a : byNum.values()) a.cum.add(a.points);
+
+            double[] cc = new double[]{rs.lat, rs.lon};
+            String imgUrl  = rs.circuitImage;
+            String flagUrl = rs.countryFlag;
+
+            // Qualifying and practice: only fetched from API (not stored in DB)
+            List<SessionResultRow> qualifyingResult = List.of();
+            List<PracticeSession> practiceResults   = List.of();
+            if (completed && fromApi && rs.meetingKey != null) {
+                Integer qualiKey = qualiByMeeting.get(rs.meetingKey);
+                if (qualiKey != null) qualifyingResult = buildSessionRows(qualiKey, byNum, true);
+                List<de.htw.f1analytics.domain.F1SessionEntity> practices = practicesByMeeting.getOrDefault(rs.meetingKey, List.of());
+                practiceResults = new ArrayList<>();
+                for (de.htw.f1analytics.domain.F1SessionEntity p : practices) {
+                    practiceResults.add(new PracticeSession(p.sessionName, buildSessionRows(p.sessionKey, byNum, false)));
+                }
+            }
+
+            Race newRace = new Race(
+                    orElse(rs.location, orElse(rs.circuitShortName, "GP")),
+                    orElse(rs.countryName, "—"),
+                    orElse(rs.circuitShortName, "—"),
+                    cc[0], cc[1],
+                    rs.dateStart == null ? "" : rs.dateStart.substring(0, Math.min(10, rs.dateStart.length())),
+                    round, completed, result, fastest, imgUrl, flagUrl,
+                    qualifyingResult, practiceResults,
+                    rs.sessionKey,
+                    rs.dateStart != null ? rs.dateStart : "");
+            races.add(newRace);
+
+            // Rennergebnis pro Session in race_cache persistieren
+            if (completed) {
+                raceCacheStore.save(rs.sessionKey, year, newRace);
+            }
+
+            cache.put(year, new SeasonStats(List.copyOf(races), List.of(), List.of(), true, totalRaceSessions, false));
         }
 
         List<DriverStanding> drivers = new ArrayList<>();
@@ -439,11 +617,36 @@ public class SeasonService {
         }
         teams.sort(Comparator.comparingInt(TeamStanding::points).reversed());
 
-        SeasonStats stats = new SeasonStats(races, drivers, teams, false, races.size());
+        SeasonStats stats = new SeasonStats(races, drivers, teams, false, races.size(), false);
         if (!races.isEmpty()) {
             cache.put(year, stats);
             cacheStore.save(year, stats);
+            prefetchAllReplays(year, races);
         }
+    }
+
+    /** Lädt GPS-Positionen aller abgeschlossenen Rennen im Hintergrund nach dem Season-Build. */
+    private void prefetchAllReplays(int year, List<Race> races) {
+        Thread.ofVirtual().name("replay-prefetch-" + year).start(() -> {
+            io.quarkus.arc.Arc.container().requestContext().activate();
+            try {
+                for (Race r : races) {
+                    if (!r.completed() || r.sessionKey() == 0 || r.sessionDateStart() == null) continue;
+                    if (dataStore.locationsExistForSession(r.sessionKey())) continue;
+                    LOG.infof("Replay-Prefetch %d: lade GPS für %s (Session %d) …",
+                            year, r.gp(), r.sessionKey());
+                    try {
+                        replayService.getReplay(r.sessionKey(), r.sessionDateStart());
+                    } catch (Exception e) {
+                        LOG.warnf("Replay-Prefetch %d: Fehler für Session %d: %s",
+                                year, r.sessionKey(), e.getMessage());
+                    }
+                }
+                LOG.infof("Replay-Prefetch %d: alle Sessions abgeschlossen", year);
+            } finally {
+                try { io.quarkus.arc.Arc.container().requestContext().terminate(); } catch (Exception ignored) {}
+            }
+        });
     }
 
     private <T> List<T> fetch(Supplier<List<T>> call) {
@@ -451,12 +654,22 @@ public class SeasonService {
         while (true) {
             try {
                 Thread.sleep(THROTTLE_MS);
-                return call.get();
+                List<T> result = call.get();
+                lastFetchWas401 = false;
+                return result;
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 return List.of();
             } catch (WebApplicationException e) {
                 int s = e.getResponse() != null ? e.getResponse().getStatus() : 0;
+                if (s == 401) {
+                    String body = "";
+                    try { body = e.getResponse().readEntity(String.class); } catch (Exception ignored) {}
+                    if (body.contains("Live F1 session")) {
+                        lastFetchWas401 = true;
+                    }
+                    return List.of();
+                }
                 if (s == 429 && attempts < MAX_RETRY) {
                     attempts++;
                     sleepQuiet(65_000L);

@@ -1,7 +1,7 @@
 <template>
   <div class="chart-section">
     <div class="chart-header">
-      <span class="eyebrow">Punkteverlauf · Kumuliert</span>
+      <span class="eyebrow">{{ t('chart.pointsTitle') }}</span>
       <div class="top-btns">
         <button
           v-for="n in tops"
@@ -17,13 +17,14 @@
     </div>
     <div class="canvas-wrap">
       <Line v-if="hasData" :data="chartData" :options="chartOptions" />
-      <div v-else class="no-data">Keine abgeschlossenen Rennen</div>
+      <div v-else class="no-data">{{ t('chart.noRaces') }}</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -38,6 +39,7 @@ import { useSeasonStore } from '@/stores/seasonStore'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
+const { t } = useI18n()
 const store = useSeasonStore()
 const tops = [3, 5, 10]
 const topN = ref(5)
@@ -61,7 +63,7 @@ const chartData = computed(() => ({
   })),
 }))
 
-const chartOptions = {
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
@@ -84,7 +86,7 @@ const chartOptions = {
       padding: 10,
       callbacks: {
         label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
-          `  ${ctx.dataset.label ?? ''}: ${ctx.parsed.y ?? 0} Pkt`,
+          `  ${ctx.dataset.label ?? ''}: ${ctx.parsed.y ?? 0}${t('chart.ptsSuffix')}`,
       },
     },
   },
@@ -101,10 +103,10 @@ const chartOptions = {
     y: {
       ticks: { color: '#6c7686', font: { family: 'JetBrains Mono', size: 11 } },
       grid: { color: '#28303c' },
-      title: { display: true, text: 'Punkte', color: '#6c7686', font: { size: 11 } },
+      title: { display: true, text: t('chart.points'), color: '#6c7686', font: { size: 11 } },
     },
   },
-}
+}))
 </script>
 
 <style scoped>

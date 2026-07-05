@@ -3,12 +3,12 @@
     <table class="standings">
       <thead>
         <tr>
-          <th class="col-pos">POS</th>
-          <th>TEAM</th>
-          <th class="col-num">PTS</th>
-          <th class="col-num">SIEGE</th>
-          <th class="col-num hide-sm">FAHRER</th>
-          <th class="col-bar hide-sm">ANTEIL</th>
+          <th class="col-pos">{{ t('common.pos') }}</th>
+          <th>{{ t('common.team') }}</th>
+          <th class="col-num">{{ t('common.pts') }}</th>
+          <th class="col-num">{{ t('common.wins') }}</th>
+          <th class="col-num hide-sm">{{ t('common.driver') }}</th>
+          <th class="col-bar hide-sm">{{ t('standings.share') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -49,8 +49,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 
+const { t } = useI18n()
 const store = useSeasonStore()
 const maxPts = computed(() => store.teams[0]?.points ?? 1)
 function pct(pts: number) {

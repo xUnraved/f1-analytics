@@ -3,15 +3,15 @@
     <table class="standings">
       <thead>
       <tr>
-        <th class="col-pos">POS</th>
-        <th class="col-driver">FAHRER</th>
-        <th class="col-team">TEAM</th>
-        <th class="col-num">PTS</th>
-        <th class="col-num">SIEGE</th>
-        <th class="col-num">PODESTE</th>
-        <th class="col-num hide-sm">DNF</th>
+        <th class="col-pos">{{ t('common.pos') }}</th>
+        <th class="col-driver">{{ t('common.driver') }}</th>
+        <th class="col-team">{{ t('common.team') }}</th>
+        <th class="col-num">{{ t('common.pts') }}</th>
+        <th class="col-num">{{ t('common.wins') }}</th>
+        <th class="col-num">{{ t('standings.podiums') }}</th>
+        <th class="col-num hide-sm">{{ t('common.dnf') }}</th>
         <th class="col-score">F1ALYTICS Ø</th>
-        <th class="col-gap hide-sm">LETZTES</th>
+        <th class="col-gap hide-sm">{{ t('standings.last') }}</th>
       </tr>
       </thead>
       <tbody>
@@ -49,9 +49,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import ScoreBadge from '@/components/ui/ScoreBadge.vue'
 
+const { t } = useI18n()
 const store = useSeasonStore()
 
 function rowClass(i: number): string {

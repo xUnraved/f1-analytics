@@ -65,6 +65,27 @@ export interface Race {
   countryFlag: string | null
   qualifyingResult: SessionResultRow[]
   practiceResults: PracticeSession[]
+  sessionKey: number
+  sessionDateStart: string
+}
+
+export interface ReplayDriver {
+  num: number
+  abbr: string
+  name: string
+  team: string
+  color: string
+}
+
+export interface ReplayFrame {
+  t: number
+  p: Record<string, [number, number]>
+}
+
+export interface ReplayData {
+  drivers: ReplayDriver[]
+  frames: ReplayFrame[]
+  duration: number
 }
 
 export interface DriverStanding extends Driver {
@@ -92,10 +113,29 @@ export interface TeamStanding {
   drivers: DriverStanding[]
 }
 
+export interface QuizCircuit {
+  name: string
+  imageUrl: string
+}
+
+export interface QuizDriver {
+  abbr: string
+  name: string
+  headshotUrl: string
+  countryCode: string
+  countryName: string
+}
+
+export interface QuizData {
+  circuits: QuizCircuit[]
+  drivers: QuizDriver[]
+}
+
 export interface SeasonStats {
   races: Race[]
   drivers: DriverStanding[]
   teams: TeamStanding[]
   loading: boolean
   totalRaces: number
+  liveSessionBlocked: boolean
 }

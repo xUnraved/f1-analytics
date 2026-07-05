@@ -1,18 +1,18 @@
 <template>
   <div v-if="race" class="panel">
-    <div v-if="!race.result.length" class="empty">Für dieses Rennen liegen noch keine Ergebnisse vor.</div>
+    <div v-if="!race.result.length" class="empty">{{ t('race.overview.noResults') }}</div>
 
     <div v-else class="table-scroll">
       <table class="results-table">
         <thead>
         <tr>
-          <th>POS</th>
-          <th>FAHRER</th>
-          <th>TEAM</th>
-          <th>RUNDEN</th>
-          <th>ABSTAND</th>
-          <th>STATUS</th>
-          <th class="th-score">F1ALYTICS</th>
+          <th>{{ t('common.pos') }}</th>
+          <th>{{ t('common.driver') }}</th>
+          <th>{{ t('common.team') }}</th>
+          <th>{{ t('common.laps') }}</th>
+          <th>{{ t('common.gap') }}</th>
+          <th>{{ t('common.status') }}</th>
+          <th class="th-score">{{ t('race.overview.f1alytics') }}</th>
         </tr>
         </thead>
         <tbody>
@@ -38,10 +38,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import type { RaceResultRow } from '@/types/f1'
 import ScoreBadge from '@/components/ui/ScoreBadge.vue'
 
+const { t } = useI18n()
 const store = useSeasonStore()
 const race = computed(() => store.selectedRace)
 

@@ -7,12 +7,12 @@
         <b>F1alytics</b>
         <span class="bd-total">{{ card.score.toFixed(1) }}<small>/10</small></span>
       </span>
-      <span class="bd-row"><span>Qualifying</span><span>{{ card.q.toFixed(1) }}</span></span>
-      <span class="bd-row"><span>Ergebnis</span><span>{{ card.r.toFixed(1) }}</span></span>
-      <span class="bd-row"><span>Positionen</span><span>{{ card.delta.toFixed(1) }}</span></span>
-      <span class="bd-row muted"><span>Basis</span><span>{{ card.base.toFixed(1) }}</span></span>
+      <span class="bd-row"><span>{{ t('score.qualifying') }}</span><span>{{ card.q.toFixed(1) }}</span></span>
+      <span class="bd-row"><span>{{ t('score.result') }}</span><span>{{ card.r.toFixed(1) }}</span></span>
+      <span class="bd-row"><span>{{ t('score.positions') }}</span><span>{{ card.delta.toFixed(1) }}</span></span>
+      <span class="bd-row muted"><span>{{ t('score.base') }}</span><span>{{ card.base.toFixed(1) }}</span></span>
       <span v-if="card.modifiers" class="bd-row"
-      ><span>Modifikatoren</span><span>+{{ card.modifiers.toFixed(1) }}</span></span
+      ><span>{{ t('score.modifiers') }}</span><span>+{{ card.modifiers.toFixed(1) }}</span></span
       >
       <span v-if="card.note" class="bd-note">{{ card.note }}</span>
     </span>
@@ -22,7 +22,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { ScoreCard } from '@/types/f1'
+
+const { t } = useI18n()
 
 const props = defineProps<{
 
@@ -44,7 +47,7 @@ const band = computed(() => {
 })
 
 const aria = computed(() =>
-  score.value === null ? 'Kein Score' : `F1alytics Score ${score.value.toFixed(1)} von 10`,
+  score.value === null ? t('score.noScore') : `F1alytics Score ${score.value.toFixed(1)} ${t('score.of10')}`,
 )
 </script>
 

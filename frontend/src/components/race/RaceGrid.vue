@@ -1,11 +1,15 @@
 <template>
   <div class="grid-head">
-    <div class="eyebrow">Alle Rennen · {{ store.year }}</div>
-    <div class="mono count">{{ store.races.length }} RENNEN</div>
+    <div class="eyebrow">{{ t('race.grid.title') }} · {{ store.year }}</div>
+    <div class="mono count">{{ store.races.length }} {{ t('race.grid.countSuffix') }}</div>
   </div>
 
   <div v-if="store.error" class="state">{{ store.error }}</div>
-  <div v-else-if="store.loading && store.races.length === 0" class="state">Lädt …</div>
+  <div v-else-if="store.loading && store.races.length === 0" class="state-loading">
+    <LoadingBar
+      :label="t('home.loading.sessions')"
+    />
+  </div>
 
   <div v-else class="tiles">
     <button
@@ -16,7 +20,7 @@
       @click="select(i)"
     >
       <span class="date">{{ race.date }}</span>
-      <div class="rnd">RUNDE {{ String(race.round).padStart(2, '0') }}</div>
+      <div class="rnd">{{ t('race.grid.round') }} {{ String(race.round).padStart(2, '0') }}</div>
       <div class="gp">{{ race.gp }}</div>
       <div class="ct">
         {{ race.circuit }} ·
@@ -25,23 +29,25 @@
       </div>
       <div v-if="race.result.length" class="win">
         <i :style="{ background: race.result[0]!.color }"></i>
-        Sieger: {{ race.result[0]!.name }}
+        {{ t('race.grid.winner') }}{{ race.result[0]!.name }}
       </div>
     </button>
   </div>
 
   <div v-if="store.loading && store.races.length > 0" class="loading-more">
-    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-    <span v-if="store.totalRaces > 0">
-      {{ store.races.length }} von {{ store.totalRaces }} Rennen geladen
-    </span>
-    <span v-else>Weitere Rennen werden geladen …</span>
+    <LoadingBar
+      :label="store.totalRaces > 0 ? t('home.loading.races', { loaded: store.races.length, total: store.totalRaces }) : t('race.grid.moreLoading')"
+      :pct="store.totalRaces > 0 ? Math.round(store.races.length / store.totalRaces * 100) : undefined"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
+import LoadingBar from '@/components/ui/LoadingBar.vue'
 
+const { t } = useI18n()
 const emit = defineEmits<{ select: [index: number] }>()
 const store = useSeasonStore()
 
@@ -65,30 +71,12 @@ function select(i: number) {
   letter-spacing: 0.1em;
 }
 
+.state-loading {
+  padding: 8px 0 24px;
+}
+
 .loading-more {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--text-faint);
-}
-
-.dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-.dot:nth-child(2) { animation-delay: 0.2s; }
-.dot:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.2; transform: scale(0.8); }
-  50%       { opacity: 1;   transform: scale(1.2); }
+  margin-top: 16px;
 }
 
 .state {

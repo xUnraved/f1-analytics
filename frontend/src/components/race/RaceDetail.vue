@@ -2,7 +2,7 @@
   <div v-if="race">
     <div class="race-head">
       <div class="race-head-left">
-        <span class="eyebrow round">Runde {{ String(race.round).padStart(2, '0') }}</span>
+        <span class="eyebrow round">{{ t('race.detail.round') }} {{ String(race.round).padStart(2, '0') }}</span>
         <div class="title-row">
           <h2 class="race-title">{{ race.gp.toUpperCase() }}</h2>
           <img
@@ -22,22 +22,25 @@
           <span>{{ race.date }}</span>
         </div>
       </div>
-      <button type="button" class="back-link" @click="emit('back')">← Alle Rennen</button>
+      <div class="head-actions">
+        <button type="button" class="icon-btn" :class="{ spinning: refreshingRace }" :disabled="refreshingRace" :title="t('race.detail.refresh')" @click="onRefreshRace">⟳</button>
+        <button type="button" class="back-link" @click="emit('back')">{{ t('race.detail.back') }}</button>
+      </div>
     </div>
 
-    <div v-if="!race.result.length" class="empty">Für dieses Rennen liegen noch keine Ergebnisse vor.</div>
+    <div v-if="!race.result.length" class="empty">{{ t('race.detail.noResults') }}</div>
 
     <template v-else>
       <div class="rtabs">
         <button
-          v-for="t in tabs"
-          :key="t.key"
+          v-for="tabItem in tabs"
+          :key="tabItem.key"
           type="button"
           class="rtab clip-tab"
-          :class="{ active: tab === t.key }"
-          @click="tab = t.key"
+          :class="{ active: tab === tabItem.key }"
+          @click="tab = tabItem.key"
         >
-          {{ t.label }}
+          {{ tabItem.label }}
         </button>
       </div>
 
@@ -52,25 +55,40 @@
       />
       <RaceDrivers v-else-if="tab === 'drivers'" :result="race.result" />
       <RaceTeams v-else-if="tab === 'teams'" :result="race.result" />
+      <ReplayTab v-else-if="tab === 'replay'" :session-key="race.sessionKey" :date-start="race.sessionDateStart" :circuit-image="race.circuitImage" />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import OverviewTab from './tabs/OverviewTab.vue'
 import RaceDrivers from './tabs/RaceDrivers.vue'
 import RaceTeams from './tabs/RaceTeams.vue'
 import SessionResultTab from './tabs/SessionResultTab.vue'
+import ReplayTab from './tabs/ReplayTab.vue'
 
-type RTab = 'result' | 'qualifying' | 'practice' | 'drivers' | 'teams'
+type RTab = 'result' | 'qualifying' | 'practice' | 'drivers' | 'teams' | 'replay'
 
+const { t } = useI18n()
 const emit = defineEmits<{ back: [] }>()
 const store = useSeasonStore()
 const race = computed(() => store.selectedRace)
 const tab = ref<RTab>('result')
 const trackImgError = ref(false)
+const refreshingRace = ref(false)
+
+async function onRefreshRace() {
+  if (!race.value?.sessionKey) return
+  refreshingRace.value = true
+  try {
+    await store.refreshRaceSingle(race.value.sessionKey)
+  } finally {
+    refreshingRace.value = false
+  }
+}
 
 const trackImageUrl = computed(() => {
   if (trackImgError.value || !race.value) return ''
@@ -78,11 +96,12 @@ const trackImageUrl = computed(() => {
 })
 
 const tabs = computed(() => {
-  const t: { key: RTab; label: string }[] = [{ key: 'result', label: 'ERGEBNIS' }]
-  if (race.value?.qualifyingResult?.length) t.push({ key: 'qualifying', label: 'QUALIFYING' })
-  if (race.value?.practiceResults?.length) t.push({ key: 'practice', label: 'TRAINING' })
-  t.push({ key: 'drivers', label: 'FAHRER' }, { key: 'teams', label: 'TEAMS' })
-  return t
+  const tabList: { key: RTab; label: string }[] = [{ key: 'result', label: t('race.detail.tabs.result') }]
+  if (race.value?.qualifyingResult?.length) tabList.push({ key: 'qualifying', label: t('race.detail.tabs.qualifying') })
+  if (race.value?.practiceResults?.length) tabList.push({ key: 'practice', label: t('race.detail.tabs.practice') })
+  tabList.push({ key: 'drivers', label: t('race.detail.tabs.drivers') }, { key: 'teams', label: t('race.detail.tabs.teams') })
+  if (race.value?.completed && race.value.sessionKey) tabList.push({ key: 'replay', label: t('race.detail.tabs.replay') })
+  return tabList
 })
 
 watch(
@@ -162,6 +181,32 @@ watch(
   flex-shrink: 0;
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.icon-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+.icon-btn.spinning { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .back-link {
   background: none;
   border: 1px solid var(--line);
@@ -172,11 +217,8 @@ watch(
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.1em;
-  transition:
-    border-color 0.2s,
-    color 0.2s;
+  transition: border-color 0.2s, color 0.2s;
 }
-
 .back-link:hover {
   border-color: var(--accent);
   color: var(--text);

@@ -10,13 +10,13 @@
           v-model="query"
           type="text"
           class="search-input"
-          placeholder="Team oder Fahrer suchen …"
+          :placeholder="t('common.searchTeam')"
           @focus="focused = true"
           @blur="focused = false"
           @keydown.enter="addFirst"
           @keydown.esc="query = ''"
         />
-        <button v-if="query" type="button" class="search-clear" @click="query = ''" aria-label="Leeren">×</button>
+        <button v-if="query" type="button" class="search-clear" @click="query = ''" :aria-label="t('common.clear')">×</button>
 
         <div v-if="suggestions.length" class="suggest">
           <button
@@ -35,8 +35,8 @@
             <span class="sug-add">+</span>
           </button>
         </div>
-        <div v-else-if="focused && full" class="sug-note">Maximal 3 Teams — entferne eins, um zu tauschen.</div>
-        <div v-else-if="focused && query.trim()" class="sug-note">Kein Treffer für „{{ query.trim() }}".</div>
+        <div v-else-if="focused && full" class="sug-note">{{ t('common.maxTeams') }}</div>
+        <div v-else-if="focused && query.trim()" class="sug-note">{{ t('common.noResultFor', { q: query.trim() }) }}</div>
       </div>
 
       <div class="tiles" :style="tilesCols">
@@ -63,10 +63,10 @@
             <span class="tile-score-val">{{ f1Text(t) }}</span>
             <span class="tile-score-lbl">F1ALYTICS Ø</span>
           </span>
-          <button type="button" class="tile-x" @click.stop="removeTeam(t.team)" aria-label="Entfernen">×</button>
+          <button type="button" class="tile-x" @click.stop="removeTeam(t.team)" :aria-label="t('common.remove')">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
-          Suche oben nach einem Team und füge bis zu 3 hinzu.
+          {{ t('common.addTeam') }}
         </div>
       </div>
     </section>
@@ -74,7 +74,7 @@
     <template v-if="selected.length">
       <div class="dash">
         <section class="card">
-          <div class="card-title">Team-Profil</div>
+          <div class="card-title">{{ t('teams.profile') }}</div>
           <svg :viewBox="`0 0 ${RW} ${RH}`" width="100%" class="radar">
             <polygon v-for="(ring, ri) in rings" :key="'ring' + ri" :points="ring" class="r-ring" />
             <line v-for="(ax, ai) in axes" :key="'ax' + ai" :x1="CX" :y1="CY" :x2="axPt(ai, RR)[0]" :y2="axPt(ai, RR)[1]" class="r-ax" />
@@ -99,7 +99,7 @@
         </section>
 
         <section class="card">
-          <div class="card-title">Direktvergleich</div>
+          <div class="card-title">{{ t('teams.comparison') }}</div>
           <div class="bars">
             <div v-for="m in barMetrics" :key="m.l" class="bgroup">
               <div class="blabel mono">{{ m.l }}</div>
@@ -117,7 +117,7 @@
 
       <div class="dash">
         <section class="card">
-          <div class="card-title">Weitere Werte</div>
+          <div class="card-title">{{ t('teams.moreStats') }}</div>
           <div class="grid" :style="gridCols">
             <div class="row">
               <div class="lbl"></div>
@@ -135,7 +135,7 @@
         </section>
 
         <section class="card">
-          <div class="card-title">Punkteverlauf</div>
+          <div class="card-title">{{ t('teams.pointsProgress') }}</div>
           <svg :viewBox="`0 0 ${W} ${H}`" width="100%" class="chart">
             <line v-for="(gy, i) in gridLines" :key="i" :x1="pad" :y1="gy" :x2="W - pad" :y2="gy" class="g" />
             <polyline
@@ -156,8 +156,8 @@
 
       <section class="card">
         <div class="ch">
-          <span class="card-title" style="margin: 0">Fahrer im Team</span>
-          <span class="hint mono">TEAM WÄHLEN → DUELL</span>
+          <span class="card-title" style="margin: 0">{{ t('teams.teamDrivers') }}</span>
+          <span class="hint mono">{{ t('teams.hint') }}</span>
         </div>
         <div class="dpick">
           <button
@@ -192,18 +192,21 @@
             </div>
           </div>
         </div>
-        <div v-else class="solo">Für dieses Team ist nur ein Fahrer erfasst.</div>
+        <div v-else class="solo">{{ t('teams.onlyOneDriver') }}</div>
       </section>
     </template>
 
-    <div v-else class="empty">Mindestens ein Team auswählen, um den Vergleich zu sehen.</div>
+    <div v-else class="empty">{{ t('teams.selectTeam') }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import type { TeamStanding, DriverStanding } from '@/types/f1'
+
+const { t } = useI18n()
 
 interface TMetric {
   l: string
@@ -357,31 +360,31 @@ function int(v: number | null): string {
   return v == null ? '–' : String(Math.round(v))
 }
 
-const barMetrics: TMetric[] = [
-  { l: 'PUNKTE', g: (t) => t.points, f: int },
-  { l: 'SIEGE', g: (t) => t.wins, f: int },
-  { l: 'PODESTPLÄTZE', g: teamPodiums, f: int },
+const barMetrics = computed<TMetric[]>(() => [
+  { l: t('drivers.metrics.points'), g: (tm) => tm.points, f: int },
+  { l: t('common.wins'), g: (tm) => tm.wins, f: int },
+  { l: t('teams.metrics.podiumCount'), g: teamPodiums, f: int },
   { l: 'F1ALYTICS Ø', g: teamF1, f: num1 },
-]
+])
 
-const tableMetrics: TMetric[] = [
-  { l: 'PUNKTE', g: (t) => t.points, f: int },
-  { l: 'SIEGE', g: (t) => t.wins, f: int },
-  { l: 'PODESTPLÄTZE', g: teamPodiums, f: int },
-  { l: 'Ø PLATZIERUNG', g: teamAvgFinish, f: num1, low: true },
-  { l: 'BESTE PLATZIERUNG', g: teamBestFinish, f: (v) => (v == null ? '–' : 'P' + Math.round(v)), low: true },
-  { l: 'DNF', g: teamDnf, f: int, low: true },
+const tableMetrics = computed<TMetric[]>(() => [
+  { l: t('drivers.metrics.points'), g: (tm) => tm.points, f: int },
+  { l: t('common.wins'), g: (tm) => tm.wins, f: int },
+  { l: t('teams.metrics.podiumCount'), g: teamPodiums, f: int },
+  { l: t('teams.metrics.avgRank'), g: teamAvgFinish, f: num1, low: true },
+  { l: t('teams.metrics.bestRank'), g: teamBestFinish, f: (v) => (v == null ? '–' : 'P' + Math.round(v)), low: true },
+  { l: t('common.dnf'), g: teamDnf, f: int, low: true },
   { l: 'F1ALYTICS Ø', g: teamF1, f: num1 },
-]
+])
 
-const driverMetrics: DMetric[] = [
-  { l: 'PUNKTE', g: (d) => d.points, f: (v) => String(v ?? 0) },
-  { l: 'SIEGE', g: (d) => d.wins, f: (v) => String(v ?? 0) },
-  { l: 'PODESTPLÄTZE', g: (d) => d.podiums, f: (v) => String(v ?? 0) },
-  { l: 'Ø PLATZIERUNG', g: (d) => d.avgFinish, f: num1, low: true },
-  { l: 'DNF', g: (d) => d.dnf, f: (v) => String(v ?? 0), low: true },
+const driverMetrics = computed<DMetric[]>(() => [
+  { l: t('drivers.metrics.points'), g: (d) => d.points, f: (v) => String(v ?? 0) },
+  { l: t('common.wins'), g: (d) => d.wins, f: (v) => String(v ?? 0) },
+  { l: t('teams.metrics.podiumCount'), g: (d) => d.podiums, f: (v) => String(v ?? 0) },
+  { l: t('teams.metrics.avgRank'), g: (d) => d.avgFinish, f: num1, low: true },
+  { l: t('common.dnf'), g: (d) => d.dnf, f: (v) => String(v ?? 0), low: true },
   { l: 'F1ALYTICS Ø', g: (d) => d.avgScore, f: num1 },
-]
+])
 
 function isBest(m: TMetric, t: TeamStanding): boolean {
   if (selected.value.length < 2) return false

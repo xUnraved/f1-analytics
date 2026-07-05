@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div v-if="!sessions.length" class="state">Keine Daten verfügbar.</div>
+    <div v-if="!sessions.length" class="state">{{ t('race.session.noData') }}</div>
 
     <template v-else>
       <!-- Untertabs bei mehreren Sessions (Training P1/P2/P3) -->
@@ -17,17 +17,17 @@
         </button>
       </div>
 
-      <div v-if="!activeSession.result.length" class="state">Keine Ergebnisse für diese Session.</div>
+      <div v-if="!activeSession.result.length" class="state">{{ t('race.session.noResults') }}</div>
 
       <div v-else class="table-wrap">
         <table class="result-table">
           <thead>
           <tr>
-            <th class="col-pos">POS</th>
-            <th>FAHRER</th>
-            <th class="hide-sm">TEAM</th>
-            <th class="col-time">BEST LAP</th>
-            <th class="col-gap">RÜCKSTAND</th>
+            <th class="col-pos">{{ t('common.pos') }}</th>
+            <th>{{ t('common.driver') }}</th>
+            <th class="hide-sm">{{ t('common.team') }}</th>
+            <th class="col-time">{{ t('common.bestLap') }}</th>
+            <th class="col-gap">{{ t('race.session.gap') }}</th>
           </tr>
           </thead>
           <tbody>
@@ -67,7 +67,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { PracticeSession } from '@/types/f1'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   sessions: PracticeSession[]
@@ -75,7 +78,6 @@ const props = defineProps<{
 
 const activeIndex = ref(0)
 
-// Bei Sessionwechsel (anderes Rennen) Index zurücksetzen
 watch(() => props.sessions, () => { activeIndex.value = 0 }, { deep: true })
 
 const activeSession = computed<PracticeSession>(

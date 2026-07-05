@@ -5,29 +5,51 @@
         <div class="brand-mark"></div>
         <div class="brand-text">
           <div class="brand-title">F1 <span>ANALYTICS</span></div>
-          <div class="brand-sub">OPENF1 · FIA TIMING</div>
+          <div class="brand-sub">{{ t('header.subtitle') }}</div>
         </div>
       </div>
 
       <div class="head-right">
-        <div class="live"><span class="dot"></span>DATEN LIVE</div>
+        <div class="live"><span class="dot"></span>{{ t('header.live') }}</div>
         <FSelect :model-value="store.year" :options="yearOptions" width="116px" @change="onYear" />
+        <button class="refresh-btn" :class="{ spinning: refreshing }" :disabled="refreshing" :title="t('header.refreshSeason')" @click="onRefreshSeason">
+          <span class="refresh-icon">⟳</span>
+          <span class="refresh-label">{{ t('header.refreshSeason') }}</span>
+        </button>
+        <button class="locale-btn" :title="locale === 'de' ? 'Switch to English' : 'Zu Deutsch wechseln'" @click="toggleLocale">
+          {{ locale === 'de' ? 'EN' : 'DE' }}
+        </button>
       </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import FSelect from '@/components/ui/FSelect.vue'
+import type { Locale } from '@/i18n'
 
+const { t, locale } = useI18n()
 const store = useSeasonStore()
+const refreshing = ref(false)
 
 const yearOptions = computed(() => store.years.map((y) => ({ value: y, label: String(y) })))
 
 function onYear(v: number | string) {
   store.selectYear(Number(v))
+}
+
+async function onRefreshSeason() {
+  refreshing.value = true
+  try { await store.refreshSeason() } finally { refreshing.value = false }
+}
+
+function toggleLocale() {
+  const next: Locale = locale.value === 'de' ? 'en' : 'de'
+  locale.value = next
+  localStorage.setItem('f1alytics.locale', next)
 }
 </script>
 
@@ -104,7 +126,49 @@ function onYear(v: number | string) {
 .head-right {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
+}
+
+.refresh-btn,
+.locale-btn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+.refresh-btn:hover:not(:disabled),
+.locale-btn:hover { border-color: var(--accent); color: var(--text); }
+.refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+.refresh-icon {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+}
+.refresh-btn.spinning .refresh-icon { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.refresh-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+
+.locale-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
 }
 
 .live {
@@ -126,21 +190,13 @@ function onYear(v: number | string) {
 }
 
 @keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 30, 30, 0.55);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgba(255, 30, 30, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 30, 30, 0);
-  }
+  0% { box-shadow: 0 0 0 0 rgba(255, 30, 30, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(255, 30, 30, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 30, 30, 0); }
 }
 
 @media (max-aspect-ratio: 13/16) {
   .brand-sub,
-  .live {
-    display: none;
-  }
+  .live { display: none; }
 }
 </style>

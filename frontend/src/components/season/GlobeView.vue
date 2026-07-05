@@ -380,8 +380,8 @@ onMounted(() => {
 
     resize()
     animate()
-  } catch (err) {
-    console.error('GlobeView init failed:', err)
+  } catch {
+    // globe init failed silently – canvas stays blank
   }
 })
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchSeasons, fetchSeason } from '@/services/f1Api'
+import { fetchSeasons, fetchSeason, refreshSeason as apiRefreshSeason, refreshRace as apiRefreshRace, refreshRaceSingle as apiRefreshRaceSingle } from '@/services/f1Api'
 import type { SeasonStats, Race, DriverStanding, TeamStanding } from '@/types/f1'
 
 export const useSeasonStore = defineStore('season', () => {
@@ -17,6 +17,7 @@ export const useSeasonStore = defineStore('season', () => {
   const drivers = computed<DriverStanding[]>(() => stats.value?.drivers ?? [])
   const teams = computed<TeamStanding[]>(() => stats.value?.teams ?? [])
   const totalRaces = computed<number>(() => stats.value?.totalRaces ?? 0)
+  const liveSessionBlocked = computed<boolean>(() => stats.value?.liveSessionBlocked ?? false)
   const selectedRace = computed<Race | null>(() =>
     selectedRaceIndex.value === null ? null : (races.value[selectedRaceIndex.value] ?? null),
   )
@@ -90,12 +91,43 @@ export const useSeasonStore = defineStore('season', () => {
     else if (selectedDrivers.value.length < 3) selectedDrivers.value.push(abbr)
   }
 
+  async function refreshSeason() {
+    const y = year.value
+    cache.delete(y)
+    await apiRefreshSeason(y)
+    await loadSeason(y)
+  }
+
+  async function refreshRace(sessionKey: number) {
+    const y = year.value
+    cache.delete(y)
+    await apiRefreshRace(sessionKey, y)
+    await loadSeason(y)
+  }
+
+  /** Lädt nur dieses eine Rennen neu (synchron, kein Polling). */
+  async function refreshRaceSingle(sessionKey: number) {
+    const y = year.value
+    loading.value = true
+    error.value = null
+    try {
+      const data = await apiRefreshRaceSingle(sessionKey, y)
+      cache.set(y, data)
+      stats.value = data
+    } catch {
+      error.value = 'Renndaten konnten nicht neu geladen werden.'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     years,
     year,
     stats,
     races,
     totalRaces,
+    liveSessionBlocked,
     drivers,
     teams,
     selectedRaceIndex,
@@ -109,5 +141,8 @@ export const useSeasonStore = defineStore('season', () => {
     openRace,
     clearRace,
     toggleDriver,
+    refreshSeason,
+    refreshRace,
+    refreshRaceSingle,
   }
 })

@@ -1,61 +1,67 @@
 <template>
   <div class="panel">
-    <div v-if="!auth.initialized" class="loading">Wird geladen …</div>
+    <div v-if="!auth.initialized" class="loading">
+      <LoadingBar :label="t('tippspiel.loading')" />
+    </div>
 
     <section v-else-if="!auth.isLoggedIn" class="auth-shell">
       <div class="auth-hero">
         <div class="hero-emoji" aria-hidden="true">🏁</div>
-        <h1 class="hero-title">F1alytics Tippspiel</h1>
-        <p class="hero-sub">Tippe Sieger, Pole, Podium und schnellste Runde — sammle Punkte, krieg den Pokal.</p>
+        <h1 class="hero-title">{{ t('tippspiel.hero.title') }}</h1>
+        <p class="hero-sub">{{ t('tippspiel.hero.subtitle') }}</p>
         <ul class="hero-bullets mono">
-          <li><b>10</b> Punkte pro richtigem Sieger</li>
-          <li><b>5</b> Punkte pro richtiger Pole</li>
-          <li><b>5</b> Punkte pro Platz im Podium</li>
-          <li><b>3</b> Punkte für die schnellste Runde</li>
+          <li>{{ t('tippspiel.hero.bullet1', { pts: 10 }) }}</li>
+          <li>{{ t('tippspiel.hero.bullet2', { pts: 5 }) }}</li>
+          <li>{{ t('tippspiel.hero.bullet3', { pts: 5 }) }}</li>
+          <li>{{ t('tippspiel.hero.bullet4', { pts: 3 }) }}</li>
         </ul>
       </div>
 
       <div class="auth-card">
         <div class="auth-tabs">
-          <button :class="{ on: mode === 'login' }" @click="mode = 'login'; clearAuthError()">Einloggen</button>
-          <button :class="{ on: mode === 'register' }" @click="mode = 'register'; clearAuthError()">Registrieren</button>
+          <button :class="{ on: mode === 'login' }" @click="mode = 'login'; clearAuthError()">{{ t('tippspiel.login') }}</button>
+          <button :class="{ on: mode === 'register' }" @click="mode = 'register'; clearAuthError()">{{ t('tippspiel.register') }}</button>
         </div>
 
         <form v-if="mode === 'login'" class="auth-form" @submit.prevent="doLogin">
           <label class="field">
-            <span class="lbl mono">NUTZERNAME ODER EMAIL</span>
+            <span class="lbl mono">{{ t('tippspiel.loginForm.userOrEmail') }}</span>
             <input v-model.trim="loginValue" type="text" required autocomplete="username" maxlength="128" />
           </label>
           <label class="field">
-            <span class="lbl mono">PASSWORT</span>
+            <span class="lbl mono">{{ t('tippspiel.loginForm.password') }}</span>
             <input v-model="loginPassword" type="password" required autocomplete="current-password" maxlength="128" />
           </label>
           <button type="submit" class="btn primary big" :disabled="auth.loading">
-            {{ auth.loading ? 'Anmelden …' : 'Einloggen' }}
+            {{ auth.loading ? t('tippspiel.loginForm.submitting') : t('tippspiel.loginForm.submit') }}
           </button>
           <p v-if="auth.error" class="auth-error">{{ auth.error }}</p>
         </form>
 
         <form v-else class="auth-form" @submit.prevent="doRegister">
           <label class="field">
-            <span class="lbl mono">NUTZERNAME · 3–32 ZEICHEN</span>
+            <span class="lbl mono">{{ t('tippspiel.registerForm.username') }}</span>
             <input v-model.trim="regUsername" type="text" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_\-]+" autocomplete="username" />
           </label>
           <label class="field">
-            <span class="lbl mono">EMAIL</span>
+            <span class="lbl mono">{{ t('tippspiel.registerForm.email') }}</span>
             <input v-model.trim="regEmail" type="email" required maxlength="128" autocomplete="email" />
           </label>
           <label class="field">
-            <span class="lbl mono">PASSWORT · MIN. 6 ZEICHEN</span>
+            <span class="lbl mono">{{ t('tippspiel.registerForm.password') }}</span>
             <input v-model="regPassword" type="password" required minlength="6" maxlength="128" autocomplete="new-password" />
           </label>
           <button type="submit" class="btn primary big" :disabled="auth.loading">
-            {{ auth.loading ? 'Account anlegen …' : 'Account erstellen' }}
+            {{ auth.loading ? t('tippspiel.registerForm.submitting') : t('tippspiel.registerForm.submit') }}
           </button>
           <p v-if="auth.error" class="auth-error">{{ auth.error }}</p>
         </form>
       </div>
     </section>
+
+    <div v-else-if="dataLoading" class="loading">
+      <LoadingBar :label="dataLoadLabel" :pct="dataLoadPct" />
+    </div>
 
     <div v-else style="display: contents">
       <section class="account-bar">
@@ -64,13 +70,13 @@
           <div>
             <div class="user-nick">{{ (auth.user?.username ?? '') }}</div>
             <div class="user-meta mono">
-              <span class="pts-pill">{{ myTotalPoints }} PKT</span>
-              <span>{{ mySettled }} GEWERTET</span>
-              <span>{{ myOpen }} OFFEN</span>
+              <span class="pts-pill">{{ myTotalPoints }} {{ t('tippspiel.bar.pts') }}</span>
+              <span>{{ mySettled }} {{ t('tippspiel.bar.settled') }}</span>
+              <span>{{ myOpen }} {{ t('tippspiel.bar.open') }}</span>
             </div>
           </div>
         </div>
-        <button class="btn ghost small" @click="auth.logout">Logout</button>
+        <button class="btn ghost small" @click="auth.logout">{{ t('tippspiel.bar.logout') }}</button>
       </section>
 
       <section v-if="upcoming.length" class="race-strip">
@@ -90,9 +96,9 @@
           <h2 class="rh-title">{{ currentRace.gp }}</h2>
           <div class="rh-countdown mono">
             <span v-if="daysUntil(currentRace.date) > 0">
-              <b>{{ daysUntil(currentRace.date) }}</b> {{ daysUntil(currentRace.date) === 1 ? 'TAG' : 'TAGE' }} BIS ZUM RENNEN
+              <b>{{ daysUntil(currentRace.date) }}</b> {{ daysUntil(currentRace.date) === 1 ? t('tippspiel.day') : t('tippspiel.days') }}{{ t('tippspiel.daysUntil') }}
             </span>
-            <span v-else class="hot">RENNT HEUTE · TIPPS BALD ZU</span>
+            <span v-else class="hot">{{ t('tippspiel.today') }}</span>
           </div>
         </div>
       </section>
@@ -102,23 +108,23 @@
           <div class="tip-head">
             <div class="tip-cat-row">
               <span class="tip-icon" aria-hidden="true">🏆</span>
-              <span class="tip-cat mono">SIEGER</span>
+              <span class="tip-cat mono">{{ t('tippspiel.tip.winner') }}</span>
             </div>
             <span class="tip-pts mono">+10</span>
           </div>
-          <p class="tip-desc">Wer gewinnt das Rennen?</p>
+          <p class="tip-desc">{{ t('tippspiel.tip.winnerQ') }}</p>
           <div class="picker">
             <select v-model="picks.WINNER">
-              <option value="">— Fahrer wählen —</option>
+              <option value="">{{ t('tippspiel.tip.choose') }}</option>
               <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
             </select>
             <button type="button" class="btn primary" :disabled="!picks.WINNER || saving.WINNER" @click="save('WINNER')">
-              {{ myTipps.WINNER ? 'Ändern' : 'Tippen' }}
+              {{ myTipps.WINNER ? t('tippspiel.tip.change') : t('tippspiel.tip.bet') }}
             </button>
           </div>
           <div v-if="myTipps.WINNER" class="my-tipp">
             <span class="mt-pick">{{ myTipps.WINNER.pick }}</span>
-            <span class="mt-status mono">✓ ABGEGEBEN</span>
+            <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
           </div>
         </article>
 
@@ -126,23 +132,23 @@
           <div class="tip-head">
             <div class="tip-cat-row">
               <span class="tip-icon" aria-hidden="true">⚡</span>
-              <span class="tip-cat mono">POLE POSITION</span>
+              <span class="tip-cat mono">{{ t('tippspiel.tip.pole') }}</span>
             </div>
             <span class="tip-pts mono">+5</span>
           </div>
-          <p class="tip-desc">Wer steht im Qualifying ganz vorne?</p>
+          <p class="tip-desc">{{ t('tippspiel.tip.poleQ') }}</p>
           <div class="picker">
             <select v-model="picks.POLE">
-              <option value="">— Fahrer wählen —</option>
+              <option value="">{{ t('tippspiel.tip.choose') }}</option>
               <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
             </select>
             <button type="button" class="btn primary" :disabled="!picks.POLE || saving.POLE" @click="save('POLE')">
-              {{ myTipps.POLE ? 'Ändern' : 'Tippen' }}
+              {{ myTipps.POLE ? t('tippspiel.tip.change') : t('tippspiel.tip.bet') }}
             </button>
           </div>
           <div v-if="myTipps.POLE" class="my-tipp">
             <span class="mt-pick">{{ myTipps.POLE.pick }}</span>
-            <span class="mt-status mono">✓ ABGEGEBEN</span>
+            <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
           </div>
         </article>
 
@@ -150,11 +156,11 @@
           <div class="tip-head">
             <div class="tip-cat-row">
               <span class="tip-icon" aria-hidden="true">🥇</span>
-              <span class="tip-cat mono">PODIUM</span>
+              <span class="tip-cat mono">{{ t('tippspiel.tip.podium') }}</span>
             </div>
-            <span class="tip-pts mono">+5 PRO PLATZ</span>
+            <span class="tip-pts mono">{{ t('tippspiel.tip.podiumPts') }}</span>
           </div>
-          <p class="tip-desc">P1, P2 und P3 in dieser Reihenfolge tippen.</p>
+          <p class="tip-desc">{{ t('tippspiel.tip.podiumQ') }}</p>
           <div class="podium-picks">
             <div class="podium-slot">
               <span class="ps-pos mono">P1</span>
@@ -178,12 +184,12 @@
               </select>
             </div>
             <button type="button" class="btn primary" :disabled="!podiumComplete || saving.PODIUM" @click="save('PODIUM')">
-              {{ myTipps.PODIUM ? 'Ändern' : 'Tippen' }}
+              {{ myTipps.PODIUM ? t('tippspiel.tip.change') : t('tippspiel.tip.bet') }}
             </button>
           </div>
           <div v-if="myTipps.PODIUM" class="my-tipp">
             <span class="mt-pick">{{ formatPodium(myTipps.PODIUM.pick) }}</span>
-            <span class="mt-status mono">✓ ABGEGEBEN</span>
+            <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
           </div>
         </article>
 
@@ -191,29 +197,29 @@
           <div class="tip-head">
             <div class="tip-cat-row">
               <span class="tip-icon" aria-hidden="true">⏱</span>
-              <span class="tip-cat mono">SCHNELLSTE RUNDE</span>
+              <span class="tip-cat mono">{{ t('tippspiel.tip.fastest') }}</span>
             </div>
             <span class="tip-pts mono">+3</span>
           </div>
-          <p class="tip-desc">Wer fährt die schnellste Rennrunde?</p>
+          <p class="tip-desc">{{ t('tippspiel.tip.fastestQ') }}</p>
           <div class="picker">
             <select v-model="picks.FASTEST_LAP">
-              <option value="">— Fahrer wählen —</option>
+              <option value="">{{ t('tippspiel.tip.choose') }}</option>
               <option v-for="d in driverOptions" :key="d.abbr" :value="d.abbr">{{ d.abbr }} · {{ d.name }}</option>
             </select>
             <button type="button" class="btn primary" :disabled="!picks.FASTEST_LAP || saving.FASTEST_LAP" @click="save('FASTEST_LAP')">
-              {{ myTipps.FASTEST_LAP ? 'Ändern' : 'Tippen' }}
+              {{ myTipps.FASTEST_LAP ? t('tippspiel.tip.change') : t('tippspiel.tip.bet') }}
             </button>
           </div>
           <div v-if="myTipps.FASTEST_LAP" class="my-tipp">
             <span class="mt-pick">{{ myTipps.FASTEST_LAP.pick }}</span>
-            <span class="mt-status mono">✓ ABGEGEBEN</span>
+            <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
           </div>
         </article>
       </section>
 
       <section v-if="currentRace && hasCrowdPicks" class="card community-card">
-        <div class="card-title">Was die Community tippt · R{{ currentRace.round }}</div>
+        <div class="card-title">{{ t('tippspiel.community.title') }}{{ currentRace.round }}</div>
         <div class="crowd-grid">
           <div v-for="cat in categories" :key="cat" class="crowd-col">
             <div class="crowd-label mono">
@@ -229,13 +235,13 @@
                 <span class="cr-pct mono">{{ crowdPct(cat, p.count) }}%</span>
               </div>
             </div>
-            <div v-else class="crowd-empty mono">NOCH KEINE TIPPS</div>
+            <div v-else class="crowd-empty mono">{{ t('tippspiel.community.noTips') }}</div>
           </div>
         </div>
       </section>
 
       <section class="card lb-card">
-        <div class="card-title">Saison-Leaderboard {{ store.year }}</div>
+        <div class="card-title">{{ t('tippspiel.leaderboard.title') }} {{ store.year }}</div>
         <div v-if="leaderboard.length" class="lb-list">
           <div v-for="(entry, i) in leaderboard" :key="entry.username" class="lb-row" :class="{ me: entry.username === (auth.user ? auth.user.username : ''), top: i < 3 }">
             <span class="lb-rank">
@@ -247,13 +253,13 @@
             <span class="lb-avatar" :style="{ background: entry.color }">{{ initial(entry.username) }}</span>
             <span class="lb-nick">
               {{ entry.username }}
-              <span v-if="entry.username === (auth.user?.username ?? '')" class="me-tag mono">DU</span>
+              <span v-if="entry.username === (auth.user?.username ?? '')" class="me-tag mono">{{ t('tippspiel.leaderboard.you') }}</span>
             </span>
-            <span class="lb-stats mono">{{ entry.settledTipps }} GEW. · {{ entry.openTipps }} OFFEN</span>
+            <span class="lb-stats mono">{{ entry.settledTipps }} {{ t('tippspiel.bar.settled') }} · {{ entry.openTipps }} {{ t('tippspiel.bar.open') }}</span>
             <span class="lb-points">{{ entry.totalPoints }}</span>
           </div>
         </div>
-        <div v-else class="empty">Noch keine ausgewerteten Tipps in dieser Saison.</div>
+        <div v-else class="empty">{{ t('tippspiel.leaderboard.empty') }}</div>
       </section>
     </div>
   </div>
@@ -261,11 +267,24 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import { useAuthStore, authHeaders } from '@/stores/authStore'
+import LoadingBar from '@/components/ui/LoadingBar.vue'
 
+const { t, locale } = useI18n()
 const store = useSeasonStore()
 const auth = useAuthStore()
+
+const dataLoading = ref(false)
+const dataLoadStep = ref(0)
+const DATA_LOAD_TOTAL = 4
+const dataLoadPct = computed(() => Math.round((dataLoadStep.value / DATA_LOAD_TOTAL) * 100))
+const dataLoadLabel = computed(() => {
+  if (dataLoadStep.value === 0) return t('tippspiel.loadingSteps.upcoming')
+  if (dataLoadStep.value === 1) return t('tippspiel.loadingSteps.tipps')
+  return t('tippspiel.loadingSteps.leaderboard')
+})
 
 interface Tipp {
   id: number
@@ -338,17 +357,17 @@ const podiumComplete = computed(() => podiumPicks.value.every((p) => p) && new S
 const myTipps = computed<Record<Cat, Tipp | null>>(() => {
   const r: Record<Cat, Tipp | null> = { WINNER: null, POLE: null, PODIUM: null, FASTEST_LAP: null }
   if (!currentRace.value) return r
-  for (const t of myAllTipps.value) {
-    if (t.round === currentRace.value.round && (t.category as Cat) in r) {
-      r[t.category as Cat] = t
+  for (const tipp of myAllTipps.value) {
+    if (tipp.round === currentRace.value.round && (tipp.category as Cat) in r) {
+      r[tipp.category as Cat] = tipp
     }
   }
   return r
 })
 
-const myTotalPoints = computed(() => myAllTipps.value.reduce((s, t) => s + (t.points ?? 0), 0))
-const mySettled = computed(() => myAllTipps.value.filter((t) => t.points != null).length)
-const myOpen = computed(() => myAllTipps.value.filter((t) => t.points == null).length)
+const myTotalPoints = computed(() => myAllTipps.value.reduce((s, tipp) => s + (tipp.points ?? 0), 0))
+const mySettled = computed(() => myAllTipps.value.filter((tipp) => tipp.points != null).length)
+const myOpen = computed(() => myAllTipps.value.filter((tipp) => tipp.points == null).length)
 
 const crowdByCat = computed<Record<Cat, CrowdPickItem[]>>(() => {
   const r: Record<Cat, CrowdPickItem[]> = { WINNER: [], POLE: [], PODIUM: [], FASTEST_LAP: [] }
@@ -366,7 +385,10 @@ function crowdPct(cat: Cat, count: number): number {
 }
 
 function categoryLabel(cat: Cat): string {
-  return cat === 'WINNER' ? 'SIEGER' : cat === 'POLE' ? 'POLE' : cat === 'PODIUM' ? 'PODIUM' : 'SCHNELLSTE RUNDE'
+  if (cat === 'WINNER') return t('tippspiel.tip.winner')
+  if (cat === 'POLE') return t('tippspiel.tip.pole')
+  if (cat === 'PODIUM') return t('tippspiel.tip.podium')
+  return t('tippspiel.tip.fastest')
 }
 function categoryIcon(cat: Cat): string {
   return cat === 'WINNER' ? '🏆' : cat === 'POLE' ? '⚡' : cat === 'PODIUM' ? '🥇' : '⏱'
@@ -387,13 +409,15 @@ function formatDate(iso: string): string {
   if (!iso) return ''
   const d = new Date(iso + 'T00:00:00')
   if (isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' })
+  const lang = locale.value === 'en' ? 'en-US' : 'de-DE'
+  return d.toLocaleDateString(lang, { day: '2-digit', month: 'long', year: 'numeric' })
 }
 function shortDate(iso: string): string {
   if (!iso) return ''
   const d = new Date(iso + 'T00:00:00')
   if (isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })
+  const lang = locale.value === 'en' ? 'en-US' : 'de-DE'
+  return d.toLocaleDateString(lang, { day: '2-digit', month: 'short' })
 }
 function daysUntil(iso: string): number {
   if (!iso) return 0
@@ -497,8 +521,8 @@ async function save(cat: Cat) {
       }),
     })
     if (!res.ok) {
-      const t = await res.text()
-      alert('Konnte Tipp nicht speichern: ' + t)
+      const txt = await res.text()
+      alert(t('errors.saveTipp', { msg: txt }))
       return
     }
     await Promise.all([loadMyTipps(), loadCrowd(), loadLeaderboard()])
@@ -508,8 +532,16 @@ async function save(cat: Cat) {
 }
 
 async function reloadAll() {
+  dataLoading.value = true
+  dataLoadStep.value = 0
   await loadUpcoming()
-  await Promise.all([loadMyTipps(), loadCrowd(), loadLeaderboard()])
+  dataLoadStep.value = 1
+  await Promise.all([
+    loadMyTipps().then(() => { dataLoadStep.value++ }),
+    loadCrowd().then(() => { dataLoadStep.value++ }),
+    loadLeaderboard().then(() => { dataLoadStep.value++ }),
+  ])
+  dataLoading.value = false
 }
 
 watch(myTipps, (mt) => {
@@ -534,6 +566,7 @@ watch(() => auth.isLoggedIn, async (loggedIn) => {
   if (loggedIn) await reloadAll()
   else {
     myAllTipps.value = []
+    dataLoading.value = false
   }
 })
 
@@ -564,11 +597,7 @@ onMounted(async () => {
 }
 
 .loading {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-faint);
-  padding: 40px 4px;
-  text-align: center;
+  padding: 24px 4px 8px;
 }
 
 .auth-shell {
