@@ -6,15 +6,15 @@
 
     <div v-else-if="state === 'error'" class="replay-state">
       <span>{{ t('race.replay.error') }}</span>
-      <button class="retry-btn" :disabled="refreshingReplay" @click="onRefreshReplay">
-        {{ refreshingReplay ? '…' : t('race.replay.retry') }}
+      <button class="retry-btn" :disabled="retrying" @click="retryLoad">
+        {{ retrying ? '…' : t('race.replay.retry') }}
       </button>
     </div>
 
     <div v-else-if="state === 'empty'" class="replay-state">
       <span>{{ t('race.replay.noData') }}</span>
-      <button class="retry-btn" :disabled="refreshingReplay" @click="onRefreshReplay">
-        {{ refreshingReplay ? '…' : t('race.replay.retry') }}
+      <button class="retry-btn" :disabled="retrying" @click="retryLoad">
+        {{ retrying ? '…' : t('race.replay.retry') }}
       </button>
     </div>
 
@@ -79,63 +79,34 @@ const { t } = useI18n()
 const props = defineProps<{
   sessionKey: number
   dateStart: string
-  circuitImage?: string | null
 }>()
 
 type State = 'loading' | 'ready' | 'error' | 'empty'
 
-const state    = ref<State>('loading')
-const data     = ref<ReplayData | null>(null)
-const canvasEl = ref<HTMLCanvasElement>()
-const playing  = ref(false)
-const speed    = ref(1)
-const currentSec = ref(0)
+const state          = ref<State>('loading')
+const data           = ref<ReplayData | null>(null)
+const canvasEl       = ref<HTMLCanvasElement>()
+const playing        = ref(false)
+const speed          = ref(1)
+const currentSec     = ref(0)
 const refreshingReplay = ref(false)
+const retrying       = ref(false)
 
-// GPS-Koordinaten → Canvas-Mapping
-let minX = 0, maxX = 1, minY = 0, maxY = 1
+// GPS → Canvas: PCA-Rotation + einheitlicher Maßstab
+let _meanX = 0, _meanY = 0
+let _cosA = 1, _sinA = 0
+let _minRX = 0, _maxRX = 1, _minRY = 0, _maxRY = 1
+let _scale = 1, _offX = 0, _offY = 0
 
 // Animations-State
-let rafId = 0
+let rafId  = 0
 let lastTs = 0
 
 const colorMap = new Map<number, string>()
 const abbrMap  = new Map<number, string>()
 
-// Streckenbild + berechnete Ausrichtung
-const circuitImg = ref<HTMLImageElement | null>(null)
-
-// Ergebnis der PCA-Ausrichtungsberechnung
-interface AlignTransform {
-  gpsCx: number; gpsCy: number  // GPS-Schwerpunkt im Canvas
-  imgCx: number; imgCy: number  // Bild-Schwerpunkt im Canvas-Raum
-  rotation: number              // Winkel (GPS.angle - Bild.angle)
-  scale: number                 // GPS.spread / Bild.spread
-  valid: boolean
-}
-let alignTransform: AlignTransform | null = null
-
-// Streckenkontur-Pfade für Overlay
+// Vorberechnete Streckenpfade aus GPS-Daten
 let trackPaths: [number, number][][] = []
-
-// ---- Streckenbild laden ----
-
-watch(() => props.circuitImage, (url) => {
-  circuitImg.value = null
-  alignTransform = null
-  if (!url) return
-  const img = new Image()
-  img.onload = () => {
-    circuitImg.value = img
-    // Wenn Daten schon da sind, Ausrichtung sofort berechnen
-    const canvas = canvasEl.value
-    if (data.value && canvas) {
-      alignTransform = computeAlignment(img, data.value, canvas.width, canvas.height)
-      drawAtTime(currentSec.value)
-    }
-  }
-  img.src = url
-}, { immediate: true })
 
 // ---- Laden ----
 
@@ -144,7 +115,6 @@ async function load() {
   cancelAnimationFrame(rafId)
   currentSec.value = 0
   trackPaths = []
-  alignTransform = null
   colorMap.clear()
   abbrMap.clear()
   data.value = null
@@ -167,6 +137,12 @@ async function load() {
   }
 }
 
+async function retryLoad() {
+  retrying.value = true
+  try { await load() }
+  finally { retrying.value = false }
+}
+
 async function onRefreshReplay() {
   refreshingReplay.value = true
   try { await refreshReplay(props.sessionKey); await load() }
@@ -176,136 +152,112 @@ async function onRefreshReplay() {
 // ---- GPS-Koordinaten ----
 
 function computeBounds(d: ReplayData) {
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
-  for (const f of d.frames) {
-    for (const pos of Object.values(f.p)) {
-      if (pos[0] < x0) x0 = pos[0]; if (pos[0] > x1) x1 = pos[0]
-      if (pos[1] < y0) y0 = pos[1]; if (pos[1] > y1) y1 = pos[1]
+  const BOUND_SECS = 360
+
+  // Nur Fahrer mit echter GPS-Bewegung verwenden: Fahrer mit Varianz < 100m (Nullposition/kein Signal) ausschließen
+  const pts: [number, number][] = []
+  for (const driver of d.drivers) {
+    const dpts: [number, number][] = []
+    for (const f of d.frames) {
+      if (f.t > BOUND_SECS) break
+      const pos = f.p[String(driver.num)]
+      if (pos) dpts.push([pos[0], pos[1]])
+    }
+    if (dpts.length < 2) continue
+    const mx = dpts.reduce((s, p) => s + p[0], 0) / dpts.length
+    const my = dpts.reduce((s, p) => s + p[1], 0) / dpts.length
+    const varXY = dpts.reduce((s, p) => s + (p[0] - mx) ** 2 + (p[1] - my) ** 2, 0) / dpts.length
+    // Mindest-Varianz: 100m Standardabweichung ≈ echter Fahrer auf der Strecke
+    if (varXY >= 100 * 100) {
+      for (const pt of dpts) pts.push(pt)
     }
   }
-  const pad = 80
-  minX = x0 - pad; maxX = x1 + pad
-  minY = y0 - pad; maxY = y1 + pad
+  const n = pts.length
+  if (n < 10) return  // kein gültiges GPS → Bounds unverändert lassen
+
+  _meanX = pts.reduce((s, p) => s + p[0], 0) / n
+  _meanY = pts.reduce((s, p) => s + p[1], 0) / n
+
+  // PCA — Hauptachse der Strecke ausrichten (auch für diagonale Strecken wie Barcelona, Montreal)
+  let cxx = 0, cyy = 0, cxy = 0
+  for (const p of pts) {
+    const dx = p[0] - _meanX, dy = p[1] - _meanY
+    cxx += dx * dx; cyy += dy * dy; cxy += dx * dy
+  }
+  const angle = Math.atan2(2 * cxy, cxx - cyy) / 2
+  _cosA = Math.cos(angle); _sinA = Math.sin(angle)
+
+  // Min/Max der rotierten Koordinaten mit ±2800m Clamp gegen extreme Ausreißer
+  let rxMin = Infinity, rxMax = -Infinity, ryMin = Infinity, ryMax = -Infinity
+  for (const p of pts) {
+    const dx = p[0] - _meanX, dy = p[1] - _meanY
+    const rx = dx * _cosA + dy * _sinA
+    const ry = -dx * _sinA + dy * _cosA
+    if (rx < rxMin) rxMin = rx; if (rx > rxMax) rxMax = rx
+    if (ry < ryMin) ryMin = ry; if (ry > ryMax) ryMax = ry
+  }
+
+  const padX = Math.max((rxMax - rxMin) * 0.12, 200)
+  const padY = Math.max((ryMax - ryMin) * 0.12, 200)
+  const CLAMP = 2800
+  _minRX = Math.max(rxMin - padX, -CLAMP); _maxRX = Math.min(rxMax + padX, CLAMP)
+  _minRY = Math.max(ryMin - padY, -CLAMP); _maxRY = Math.min(ryMax + padY, CLAMP)
+
+  console.log(`[Bounds] drivers=${d.drivers.length} validPts=${n} angle=${(angle*180/Math.PI).toFixed(1)}° rx=[${rxMin.toFixed(0)},${rxMax.toFixed(0)}] ry=[${ryMin.toFixed(0)},${ryMax.toFixed(0)}]`)
 }
 
-function toCanvas(x: number, y: number, W: number, H: number): [number, number] {
+function updateScale(W: number, H: number) {
+  const scaleX = W / (_maxRX - _minRX)
+  const scaleY = H / (_maxRY - _minRY)
+  _scale = Math.min(scaleX, scaleY) * 0.92
+  _offX = (W - (_maxRX - _minRX) * _scale) / 2
+  _offY = (H - (_maxRY - _minRY) * _scale) / 2
+}
+
+function toCanvas(x: number, y: number, _W: number, H: number): [number, number] {
+  const dx = x - _meanX, dy = y - _meanY
+  const rx = dx * _cosA + dy * _sinA
+  const ry = -dx * _sinA + dy * _cosA
   return [
-    ((x - minX) / (maxX - minX)) * W,
-    H - ((y - minY) / (maxY - minY)) * H,
+    _offX + (rx - _minRX) * _scale,
+    H - _offY - (ry - _minRY) * _scale,
   ]
 }
 
-// ---- PCA-Hilfsfunktionen ----
-
-interface PcaResult { cx: number; cy: number; angle: number; spread: number }
-
-function pca(pts: [number, number][]): PcaResult {
-  if (pts.length < 10) return { cx: 0, cy: 0, angle: 0, spread: 1 }
-
-  let cx = 0, cy = 0
-  for (const p of pts) { cx += p[0]; cy += p[1] }
-  cx /= pts.length; cy /= pts.length
-
-  let cxx = 0, cxy = 0, cyy = 0
-  for (const p of pts) {
-    const dx = p[0] - cx, dy = p[1] - cy
-    cxx += dx * dx; cxy += dx * dy; cyy += dy * dy
-  }
-  cxx /= pts.length; cxy /= pts.length; cyy /= pts.length
-
-  const tr   = cxx + cyy
-  const disc = Math.sqrt(Math.max(0, ((cxx - cyy) * (cxx - cyy)) * 0.25 + cxy * cxy))
-  const l1   = tr * 0.5 + disc
-
-  return {
-    cx,
-    cy,
-    angle:  Math.atan2(l1 - cxx, cxy),
-    spread: Math.sqrt(l1),
-  }
-}
-
-/** Analysiert das Streckenbild bei kleiner Auflösung, findet die farbigen Pixel der Streckenlinie. */
-function analyzeImage(img: HTMLImageElement): PcaResult {
-  // Kleine Auflösung für Geschwindigkeit; Textur/Text werden weichgezeichnet
-  const AW = 160, AH = 100
-  const oc  = document.createElement('canvas')
-  oc.width  = AW; oc.height = AH
-  const ctx = oc.getContext('2d')!
-  ctx.drawImage(img, 0, 0, AW, AH)
-  const d = ctx.getImageData(0, 0, AW, AH).data
-
-  const pts: [number, number][] = []
-  for (let y = 0; y < AH; y++) {
-    for (let x = 0; x < AW; x++) {
-      const i = (y * AW + x) * 4
-      const a = d[i + 3]!
-      if (a < 40) continue                                    // transparent → kein Track
-      const luma = (d[i]! * 299 + d[i + 1]! * 587 + d[i + 2]! * 114) / 1000
-      if (luma > 205) continue                                // zu hell (Hintergrund) → kein Track
-      pts.push([x / AW, y / AH])                             // normiert auf [0,1]
-    }
-  }
-  return pca(pts)
-}
-
-/** Analysiert die GPS-Positionen der ersten ~6 Minuten, gibt Schwerpunkt + Hauptachse zurück. */
-function analyzeGps(d: ReplayData, W: number, H: number): PcaResult {
-  const pts: [number, number][] = []
-  for (const f of d.frames) {
-    if (f.t > 360) break
-    for (const pos of Object.values(f.p)) {
-      pts.push(toCanvas(pos[0], pos[1], W, H))
-    }
-  }
-  return pca(pts)
-}
-
-/**
- * Berechnet die Transformation (Rotation + Skalierung + Translation),
- * die das Streckenbild so ausrichtet, dass die Bildpixel mit den GPS-Punkten übereinstimmen.
- */
-function computeAlignment(img: HTMLImageElement, d: ReplayData, W: number, H: number): AlignTransform {
-  const gps = analyzeGps(d, W, H)
-  const im  = analyzeImage(img)
-
-  if (im.spread < 0.01 || gps.spread < 1) {
-    return { gpsCx: W / 2, gpsCy: H / 2, imgCx: W / 2, imgCy: H / 2, rotation: 0, scale: 1, valid: false }
-  }
-
-  // Bildkoordinaten (normiert 0–1) in Canvas-Pixel umrechnen
-  const imgCx = im.cx * W
-  const imgCy = im.cy * H
-  // Bildspread ist in normierter Einheit → in Canvas-Pixel umrechnen (geometrisches Mittel der Seiten)
-  const imgSpread = im.spread * Math.sqrt(W * H)
-
-  return {
-    gpsCx:    gps.cx,
-    gpsCy:    gps.cy,
-    imgCx,
-    imgCy,
-    rotation: gps.angle - im.angle,
-    scale:    gps.spread / imgSpread,
-    valid:    true,
-  }
-}
-
-// ---- Track-Pfade aufbauen ----
+// ---- Streckenpfade aus GPS-Daten aufbauen ----
 
 function buildTrackPaths(d: ReplayData, W: number, H: number) {
   trackPaths = []
+  // 1000m Threshold: überbrückt Datenlücken von bis zu ~12s bei Vollgas,
+  // erlaubt Boxeneinfahrten — filtert nur echte Positionssprünge (Bergung etc.)
+  const MAX_STEP_SQ = 1000 * 1000
+
   for (const driver of d.drivers) {
-    const pts: [number, number][] = []
+    let segment: [number, number][] = []
+    let prevGps: [number, number] | null = null
+
     for (const f of d.frames) {
-      if (f.t > 360) break
-      const pos = f.p[driver.num]
-      if (pos) pts.push(toCanvas(pos[0], pos[1], W, H))
+      const pos = f.p[String(driver.num)]
+      if (!pos) continue  // Frame überspringen, prevGps beibehalten
+
+      if (prevGps) {
+        const dx = pos[0] - prevGps[0]
+        const dy = pos[1] - prevGps[1]
+        if (dx * dx + dy * dy > MAX_STEP_SQ) {
+          if (segment.length > 2) trackPaths.push(segment)
+          segment = []
+        }
+      }
+
+      segment.push(toCanvas(pos[0], pos[1], W, H))
+      prevGps = [pos[0], pos[1]]
     }
-    if (pts.length > 5) trackPaths.push(pts)
+
+    if (segment.length > 2) trackPaths.push(segment)
   }
 }
 
-// ---- Interpoliertes Zeichnen ----
+// ---- Zeichnen ----
 
 function drawAtTime(sec: number) {
   const canvas = canvasEl.value
@@ -314,7 +266,7 @@ function drawAtTime(sec: number) {
   if (!ctx) return
   const W = canvas.width, H = canvas.height
 
-  // Umgebende Frames für lineare Interpolation
+  // Frames für Interpolation finden
   const frames = data.value.frames
   let lo = 0, hi = frames.length - 1
   while (lo < hi) {
@@ -329,78 +281,99 @@ function drawAtTime(sec: number) {
 
   // Hintergrund
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = '#0a0a0f'
+  ctx.fillStyle = '#111118'
   ctx.fillRect(0, 0, W, H)
 
-  // Streckenbild – ausgerichtet per PCA-Transform
-  const img = circuitImg.value
-  if (img && img.naturalWidth > 0) {
-    const t = alignTransform
-    if (t?.valid) {
-      ctx.save()
-      ctx.translate(t.gpsCx, t.gpsCy)
-      ctx.rotate(t.rotation)
-      ctx.scale(t.scale, t.scale)
-      ctx.translate(-t.imgCx, -t.imgCy)
-      ctx.globalAlpha = 0.40
-      ctx.drawImage(img, 0, 0, W, H)
-      ctx.globalAlpha = 1
-      ctx.restore()
-    } else {
-      // Fallback: gestreckt über den ganzen Canvas
-      ctx.globalAlpha = 0.25
-      ctx.drawImage(img, 0, 0, W, H)
-      ctx.globalAlpha = 1
-    }
-  }
-
-  // GPS-Streckenkontur als dünnes Overlay
+  // Strecke mit Catmull-Rom Splines (weiche Kurven aus 1Hz-Daten)
   if (trackPaths.length > 0) {
-    ctx.beginPath()
-    for (const path of trackPaths) {
-      if (path.length < 2) continue
-      ctx.moveTo(path[0]![0], path[0]![1])
-      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i]![0], path[i]![1])
+    ctx.lineCap  = 'round'
+    ctx.lineJoin = 'round'
+
+    // Catmull-Rom: bezierCurveTo mit Kontrollpunkten aus Nachbarpunkten
+    const splinePaths = () => {
+      for (const path of trackPaths) {
+        if (path.length < 2) continue
+        ctx.moveTo(path[0]![0], path[0]![1])
+        for (let i = 0; i < path.length - 1; i++) {
+          const p0 = path[Math.max(0, i - 1)]!
+          const p1 = path[i]!
+          const p2 = path[i + 1]!
+          const p3 = path[Math.min(path.length - 1, i + 2)]!
+          const cp1x = p1[0] + (p2[0] - p0[0]) / 6
+          const cp1y = p1[1] + (p2[1] - p0[1]) / 6
+          const cp2x = p2[0] - (p3[0] - p1[0]) / 6
+          const cp2y = p2[1] - (p3[1] - p1[1]) / 6
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1])
+        }
+      }
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)'
-    ctx.lineWidth   = 1.5
-    ctx.lineCap     = 'round'
-    ctx.lineJoin    = 'round'
+
+    // Äußere dunkle Kante (Randstein-Effekt)
+    ctx.beginPath(); splinePaths()
+    ctx.strokeStyle = 'rgba(40, 44, 65, 1.0)'
+    ctx.lineWidth   = 30
+    ctx.stroke()
+
+    // Fahrbahn (hellgrau wie echte Asphalt-Streckenbilder)
+    ctx.beginPath(); splinePaths()
+    ctx.strokeStyle = 'rgba(148, 155, 185, 0.88)'
+    ctx.lineWidth   = 20
+    ctx.stroke()
+
+    // Schmale innere Helligkeit (Lichteffekt)
+    ctx.beginPath(); splinePaths()
+    ctx.strokeStyle = 'rgba(210, 220, 255, 0.18)'
+    ctx.lineWidth   = 4
     ctx.stroke()
   }
 
-  // Fahrerpunkte mit interpolierten Positionen
-  const R = 11
+  // Fahrerpunkte mit Interpolation
+  const R = 9
+  const carData: { cx: number; cy: number; color: string; abbr: string }[] = []
+
   for (const [numStr, posA] of Object.entries(frameA.p)) {
     const num = parseInt(numStr)
-
     let x = posA[0], y = posA[1]
     if (frameB && frac > 0) {
       const posB = frameB.p[numStr]
       if (posB) {
-        x = posA[0] + (posB[0] - posA[0]) * frac
-        y = posA[1] + (posB[1] - posA[1]) * frac
+        const dx = posB[0] - posA[0]
+        const dy = posB[1] - posA[1]
+        // Nur interpolieren wenn Abstand < 300m (verhindert Linien bei ausgeschiedenen Autos)
+        if (dx * dx + dy * dy < 300 * 300) {
+          x = posA[0] + dx * frac
+          y = posA[1] + dy * frac
+        }
       }
     }
-
     const [cx, cy] = toCanvas(x, y, W, H)
-    const color = colorMap.get(num) ?? '#888'
-    const abbr  = abbrMap.get(num)  ?? `#${num}`
+    carData.push({ cx, cy, color: colorMap.get(num) ?? '#888', abbr: abbrMap.get(num) ?? `${num}` })
+  }
 
+  // Schatten-Pass (erst alle Schatten, dann Punkte — verhindert Überlappungsfehler)
+  for (const { cx, cy, color } of carData) {
     ctx.shadowColor = color
-    ctx.shadowBlur  = 8
+    ctx.shadowBlur  = 12
     ctx.beginPath()
     ctx.arc(cx, cy, R, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
-    ctx.shadowBlur = 0
+  }
+  ctx.shadowBlur = 0
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+  // Punkte + Labels
+  for (const { cx, cy, color, abbr } of carData) {
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'
     ctx.lineWidth   = 1.5
     ctx.stroke()
 
+    // Kürzel im Punkt
     ctx.fillStyle    = '#fff'
-    ctx.font         = 'bold 7px monospace'
+    ctx.font         = `bold ${R < 8 ? 6 : 7}px monospace`
     ctx.textAlign    = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(abbr, cx, cy)
@@ -460,14 +433,8 @@ function resizeCanvas() {
   const wrap = canvas.parentElement!
   canvas.width  = wrap.clientWidth
   canvas.height = wrap.clientHeight
-
+  updateScale(canvas.width, canvas.height)
   buildTrackPaths(data.value, canvas.width, canvas.height)
-
-  // Ausrichtung mit aktueller Canvas-Größe neu berechnen
-  if (circuitImg.value) {
-    alignTransform = computeAlignment(circuitImg.value, data.value, canvas.width, canvas.height)
-  }
-
   drawAtTime(currentSec.value)
 }
 

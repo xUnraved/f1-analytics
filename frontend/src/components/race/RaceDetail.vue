@@ -55,7 +55,7 @@
       />
       <RaceDrivers v-else-if="tab === 'drivers'" :result="race.result" />
       <RaceTeams v-else-if="tab === 'teams'" :result="race.result" />
-      <ReplayTab v-else-if="tab === 'replay'" :session-key="race.sessionKey" :date-start="race.sessionDateStart" :circuit-image="race.circuitImage" />
+      <ReplayTab v-else-if="tab === 'replay'" :session-key="race.sessionKey" :date-start="race.sessionDateStart" />
     </template>
   </div>
 </template>

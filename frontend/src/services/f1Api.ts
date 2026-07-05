@@ -58,3 +58,4 @@ export async function refreshReplay(sessionKey: number): Promise<void> {
   const res = await fetch(`${BASE_URL}/replay?session_key=${sessionKey}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`API error: ${res.status}`)
 }
+
