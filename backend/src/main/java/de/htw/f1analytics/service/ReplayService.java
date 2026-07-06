@@ -71,8 +71,13 @@ public class ReplayService {
             if (dataStore.locationsExistForSession(sessionKey)) {
                 LOG.infof("Replay %d: aus PostgreSQL geladen", sessionKey);
                 ReplayData fromDb = buildFromDb(sessionKey);
-                ramCache.put(sessionKey, fromDb);
-                return fromDb;
+                if (!fromDb.frames().isEmpty()) {
+                    ramCache.put(sessionKey, fromDb);
+                    return fromDb;
+                }
+                // Alle gespeicherten Zeilen hatten null tMs (Altdaten) → löschen und neu von API laden
+                LOG.warnf("Replay %d: DB-Daten inkonsistent (tMs null), lösche und lade neu", sessionKey);
+                dataStore.deleteLocations(sessionKey);
             }
 
             // 3. OpenF1 API abrufen, in DB speichern, zurückgeben
@@ -93,6 +98,7 @@ public class ReplayService {
         Map<Integer, ReplayDriver> driverMap = loadDriversFromSession(sessionKey);
         TreeMap<Long, Map<Integer, double[]>> byMs = new TreeMap<>();
         for (F1LocationEntity loc : rows) {
+            if (loc.tMs == null) continue;
             byMs.computeIfAbsent(loc.tMs, k -> new HashMap<>())
                     .put(loc.driverNumber, new double[]{loc.x, loc.y});
         }

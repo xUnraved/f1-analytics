@@ -24,7 +24,7 @@ public class F1LocationEntity extends PanacheEntityBase {
 
     /** Millisekunden ab Fensterbeginn (volle GPS-Auflösung, nicht auf 1Hz gerundet) */
     @Column(name = "t_ms")
-    public long tMs;
+    public Long tMs;
 
     public double x;
     public double y;
@@ -34,7 +34,7 @@ public class F1LocationEntity extends PanacheEntityBase {
     }
 
     public static List<F1LocationEntity> findBySession(int sessionKey) {
-        return list("sessionKey = ?1 order by tMs, driverNumber", sessionKey);
+        return list("sessionKey = ?1 AND tMs IS NOT NULL order by tMs, driverNumber", sessionKey);
     }
 
     public static void deleteBySession(int sessionKey) {

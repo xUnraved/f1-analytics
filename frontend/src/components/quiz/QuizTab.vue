@@ -39,6 +39,17 @@
           <span class="mode-desc">{{ t('quiz.driverDesc') }}</span>
           <span v-if="drivers.length < 5" class="mode-na">{{ t('quiz.notEnoughData', { count: drivers.length }) }}</span>
         </button>
+        <button
+          class="mode-card"
+          :class="{ disabled: ageDrivers.length < 5 }"
+          :disabled="ageDrivers.length < 5"
+          @click="startQuiz('age')"
+        >
+          <span class="mode-icon">&#9654;</span>
+          <span class="mode-label">{{ t('quiz.ageMode') }}</span>
+          <span class="mode-desc">{{ t('quiz.ageDesc') }}</span>
+          <span v-if="ageDrivers.length < 5" class="mode-na">{{ t('quiz.notEnoughData', { count: ageDrivers.length }) }}</span>
+        </button>
       </div>
     </template>
 
@@ -58,13 +69,13 @@
           <p class="question-text">{{ t('quiz.circuitQuestion') }}</p>
         </template>
 
-        <!-- Driver question -->
+        <!-- Driver / Age question -->
         <template v-else>
           <div class="driver-img-wrap">
             <img :src="currentQ.headshotUrl" :alt="currentQ.name" class="driver-img" />
           </div>
           <p class="driver-name">{{ currentQ.name }}</p>
-          <p class="question-text">{{ t('quiz.driverQuestion') }}</p>
+          <p class="question-text">{{ mode === 'age' ? t('quiz.ageQuestion') : t('quiz.driverQuestion') }}</p>
         </template>
 
         <!-- Options -->
@@ -110,10 +121,10 @@
           >
             <span class="review-num">{{ i + 1 }}</span>
             <template v-if="mode === 'circuit'">
-              <img :src="q.imageUrl" class="review-img" />
+              <img :src="(q as any).imageUrl" class="review-img" />
             </template>
             <template v-else>
-              <img :src="q.headshotUrl" class="review-img review-headshot" />
+              <img :src="(q as any).headshotUrl" class="review-img review-headshot" />
             </template>
             <div class="review-text">
               <span class="review-correct">{{ correctAnswer(q) }}</span>
@@ -139,7 +150,7 @@ import LoadingBar from '@/components/ui/LoadingBar.vue'
 
 const { t } = useI18n()
 
-type Mode = 'circuit' | 'driver'
+type Mode = 'circuit' | 'driver' | 'age'
 type Question = QuizCircuit | QuizDriver
 
 const loading = ref(true)
@@ -157,6 +168,7 @@ const score = ref(0)
 const finished = ref(false)
 
 const noData = computed(() => circuits.value.length === 0 && drivers.value.length === 0)
+const ageDrivers = computed(() => drivers.value.filter(d => d.birthYear != null))
 
 onMounted(async () => {
   try {
@@ -172,8 +184,13 @@ onMounted(async () => {
 
 const currentQ = computed(() => questions.value[questionIndex.value] as any)
 
+function driverAge(d: QuizDriver): number {
+  return new Date().getFullYear() - d.birthYear!
+}
+
 function correctAnswer(q: Question): string {
   if (mode.value === 'circuit') return (q as QuizCircuit).name
+  if (mode.value === 'age') return String(driverAge(q as QuizDriver))
   return (q as QuizDriver).countryName
 }
 
@@ -207,6 +224,9 @@ function startQuiz(m: Mode) {
   if (m === 'circuit') {
     questions.value = pick(circuits.value, Math.min(10, circuits.value.length))
     setCircuitOptions()
+  } else if (m === 'age') {
+    questions.value = pick(ageDrivers.value, Math.min(10, ageDrivers.value.length))
+    setAgeOptions()
   } else {
     questions.value = pick(drivers.value, Math.min(10, drivers.value.length))
     setDriverOptions()
@@ -223,6 +243,22 @@ function setDriverOptions() {
   const q = questions.value[questionIndex.value] as QuizDriver
   const allCountries = [...new Set(drivers.value.map(d => d.countryName))]
   currentOptions.value = buildOptions(q.countryName, allCountries)
+}
+
+function setAgeOptions() {
+  const q = questions.value[questionIndex.value] as QuizDriver
+  const year = new Date().getFullYear()
+  const correctAge = year - q.birthYear!
+  let pool = [...new Set(ageDrivers.value.map(d => String(year - d.birthYear!)))]
+  // Fallback: add nearby ages if pool is too small
+  if (pool.filter(a => a !== String(correctAge)).length < 3) {
+    for (const offset of [2, -2, 4, -4, 3, -3, 5, -5, 1, -1]) {
+      const alt = String(correctAge + offset)
+      if (!pool.includes(alt)) pool.push(alt)
+      if (pool.filter(a => a !== String(correctAge)).length >= 3) break
+    }
+  }
+  currentOptions.value = buildOptions(String(correctAge), pool)
 }
 
 function answer(opt: string) {
@@ -242,6 +278,7 @@ function next() {
   answered.value = false
   chosen.value = null
   if (mode.value === 'circuit') setCircuitOptions()
+  else if (mode.value === 'age') setAgeOptions()
   else setDriverOptions()
 }
 
@@ -309,7 +346,7 @@ const resultLabel = computed(() => {
 }
 .mode-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 .mode-card {

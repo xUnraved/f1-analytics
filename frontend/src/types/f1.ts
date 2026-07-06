@@ -168,6 +168,7 @@ export interface QuizDriver {
   headshotUrl: string
   countryCode: string
   countryName: string
+  birthYear?: number
 }
 
 export interface QuizData {

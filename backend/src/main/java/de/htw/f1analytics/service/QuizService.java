@@ -2,7 +2,9 @@ package de.htw.f1analytics.service;
 
 import de.htw.f1analytics.client.OpenF1DriverDto;
 import de.htw.f1analytics.domain.QuizDriverEntity;
+import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -12,6 +14,19 @@ import java.util.Map;
 
 @ApplicationScoped
 public class QuizService {
+
+    private static final Map<String, Integer> BIRTH_YEARS = Map.ofEntries(
+            Map.entry("VER", 1997), Map.entry("NOR", 2000), Map.entry("LEC", 1997),
+            Map.entry("HAM", 1985), Map.entry("SAI", 1994), Map.entry("RUS", 1998),
+            Map.entry("PIA", 2001), Map.entry("ALO", 1981), Map.entry("STR", 1999),
+            Map.entry("PER", 1990), Map.entry("GAS", 1996), Map.entry("OCO", 1996),
+            Map.entry("ALB", 1996), Map.entry("ZHO", 1999), Map.entry("BOT", 1989),
+            Map.entry("MAG", 1992), Map.entry("HUL", 1987), Map.entry("TSU", 2000),
+            Map.entry("LAW", 2002), Map.entry("BEA", 2000), Map.entry("ANT", 2006),
+            Map.entry("HAD", 2004), Map.entry("BOR", 2004), Map.entry("DOO", 2004),
+            Map.entry("RIC", 1989), Map.entry("DEV", 1995), Map.entry("SAR", 1999),
+            Map.entry("COL", 2003), Map.entry("VET", 1987), Map.entry("RAI", 1979)
+    );
 
     private static final Map<String, String> COUNTRY_NAMES = Map.ofEntries(
             Map.entry("AUS", "Australien"),
@@ -49,7 +64,7 @@ public class QuizService {
     public record CircuitQuizItem(String name, String imageUrl) {}
 
     public record DriverQuizItem(String abbr, String name, String headshotUrl,
-                                 String countryCode, String countryName) {}
+                                 String countryCode, String countryName, Integer birthYear) {}
 
     public record QuizData(List<CircuitQuizItem> circuits, List<DriverQuizItem> drivers) {}
 
@@ -73,8 +88,17 @@ public class QuizService {
 
     private List<DriverQuizItem> getDrivers() {
         return QuizDriverEntity.withHeadshotAndCountry().stream()
-                .map(d -> new DriverQuizItem(d.abbr, d.name, d.headshotUrl, d.countryCode, d.countryName))
+                .map(d -> new DriverQuizItem(d.abbr, d.name, d.headshotUrl, d.countryCode, d.countryName, d.birthYear))
                 .toList();
+    }
+
+    @Transactional
+    void onStart(@Observes StartupEvent ev) {
+        for (QuizDriverEntity d : QuizDriverEntity.<QuizDriverEntity>listAll()) {
+            if (d.abbr == null) continue;
+            Integer by = BIRTH_YEARS.get(d.abbr.toUpperCase());
+            if (by != null && !by.equals(d.birthYear)) d.birthYear = by;
+        }
     }
 
     @Transactional
@@ -83,20 +107,24 @@ public class QuizService {
         String countryName = COUNTRY_NAMES.get(dto.countryCode().toUpperCase());
         if (countryName == null) return;
 
+        String abbr = dto.nameAcronym() != null ? dto.nameAcronym().toUpperCase() : "";
+        Integer birthYear = BIRTH_YEARS.get(abbr);
+
         QuizDriverEntity existing = QuizDriverEntity.findById(dto.driverNumber());
         if (existing != null) {
-            // update headshot/country if richer data arrived
             if (dto.headshotUrl() != null) existing.headshotUrl = dto.headshotUrl();
-            if (countryName != null)        existing.countryName = countryName;
+            if (countryName != null)       existing.countryName = countryName;
+            if (birthYear != null)         existing.birthYear   = birthYear;
             return;
         }
         QuizDriverEntity e = new QuizDriverEntity();
         e.driverNumber = dto.driverNumber();
-        e.abbr         = dto.nameAcronym() != null ? dto.nameAcronym() : "#" + dto.driverNumber();
-        e.name         = dto.fullName()    != null ? dto.fullName()    : e.abbr;
+        e.abbr         = abbr.isEmpty() ? "#" + dto.driverNumber() : abbr;
+        e.name         = dto.fullName()  != null ? dto.fullName()  : e.abbr;
         e.headshotUrl  = dto.headshotUrl();
         e.countryCode  = dto.countryCode().toUpperCase();
         e.countryName  = countryName;
+        e.birthYear    = birthYear;
         e.persist();
     }
 }

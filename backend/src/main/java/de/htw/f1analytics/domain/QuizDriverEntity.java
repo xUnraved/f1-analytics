@@ -24,7 +24,14 @@ public class QuizDriverEntity extends PanacheEntityBase {
     @Column(name = "country_name")
     public String countryName;
 
+    @Column(name = "birth_year")
+    public Integer birthYear;
+
     public static List<QuizDriverEntity> withHeadshotAndCountry() {
         return list("headshotUrl IS NOT NULL AND countryName IS NOT NULL");
+    }
+
+    public static List<QuizDriverEntity> withBirthYear() {
+        return list("headshotUrl IS NOT NULL AND birthYear IS NOT NULL");
     }
 }
