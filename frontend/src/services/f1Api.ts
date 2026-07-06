@@ -24,6 +24,13 @@ export async function fetchReplay(sessionKey: number, dateStart: string): Promis
   return res.json()
 }
 
+/** Lädt Reifen/Rundenzeiten/Positionen/Flaggen für die Live-Timing-Anzeige neben dem Replay. */
+export async function fetchTiming(sessionKey: number, dateStart: string): Promise<import('@/types/f1').TimingData> {
+  const res = await fetch(`${BASE_URL}/replay/timing?session_key=${sessionKey}&date_start=${encodeURIComponent(dateStart)}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
 /** Löscht den Saison-Cache (DB + RAM) → Backend lädt alles neu von OpenF1. */
 export async function refreshSeason(year: number): Promise<void> {
   const res = await fetch(`${BASE_URL}/season/cache?year=${year}`, { method: 'DELETE' })

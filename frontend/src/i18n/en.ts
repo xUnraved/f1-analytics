@@ -102,6 +102,22 @@ export default {
       noData: 'No position data available — a live session may be in progress.',
       retry: 'Try again',
       refresh: 'Reload replay from API',
+      timing: {
+        driver: 'Driver',
+        tyre: 'Tyre',
+        lastLap: 'Lap',
+        sectors: 'Sectors',
+        gap: 'Gap',
+        points: 'Pts',
+      },
+      flag: {
+        green: 'GREEN FLAG',
+        yellow: 'YELLOW FLAG',
+        doubleYellow: 'DOUBLE YELLOW',
+        red: 'RED FLAG',
+        chequered: 'CHEQUERED FLAG',
+        blue: 'BLUE FLAG',
+      },
     },
     session: {
       noData: 'No data available.',

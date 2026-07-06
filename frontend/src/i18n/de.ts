@@ -102,6 +102,22 @@ export default {
       noData: 'Keine Positionsdaten verfügbar — evtl. läuft gerade eine Live-Session.',
       retry: 'Erneut versuchen',
       refresh: 'Replay neu von API laden',
+      timing: {
+        driver: 'Fahrer',
+        tyre: 'Reifen',
+        lastLap: 'Runde',
+        sectors: 'Sektoren',
+        gap: 'Abstand',
+        points: 'Pkt',
+      },
+      flag: {
+        green: 'GRÜNE FLAGGE',
+        yellow: 'GELBE FLAGGE',
+        doubleYellow: 'DOPPELT GELB',
+        red: 'ROTE FLAGGE',
+        chequered: 'ZIELFLAGGE',
+        blue: 'BLAUE FLAGGE',
+      },
     },
     session: {
       noData: 'Keine Daten verfügbar.',

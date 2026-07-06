@@ -39,4 +39,20 @@ public interface OpenF1Client {
     @Path("/location")
     List<OpenF1LocationDto> getLocations(@QueryParam("session_key") int sessionKey,
                                          @QueryParam("driver_number") int driverNumber);
+
+    @GET
+    @Path("/stints")
+    List<OpenF1StintDto> getStints(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/position")
+    List<OpenF1PositionDto> getPosition(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/race_control")
+    List<OpenF1RaceControlDto> getRaceControl(@QueryParam("session_key") int sessionKey);
+
+    @GET
+    @Path("/intervals")
+    List<OpenF1IntervalDto> getIntervals(@QueryParam("session_key") int sessionKey);
 }

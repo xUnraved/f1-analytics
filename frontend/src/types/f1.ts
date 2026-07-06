@@ -88,6 +88,50 @@ export interface ReplayData {
   duration: number
 }
 
+export interface LapInfo {
+  driverNumber: number
+  lapNumber: number
+  t: number
+  duration: number | null
+  sector1: number | null
+  sector2: number | null
+  sector3: number | null
+}
+
+export interface StintInfo {
+  driverNumber: number
+  compound: string
+  lapStart: number
+  lapEnd: number
+}
+
+export interface PositionPoint {
+  driverNumber: number
+  position: number
+  t: number
+}
+
+export interface FlagEvent {
+  t: number
+  flag: string
+  scope: string | null
+}
+
+export interface IntervalPoint {
+  driverNumber: number
+  gapSec: number | null
+  t: number
+}
+
+export interface TimingData {
+  laps: LapInfo[]
+  stints: StintInfo[]
+  positions: PositionPoint[]
+  flags: FlagEvent[]
+  intervals: IntervalPoint[]
+  gridPosition: Record<string, number>
+}
+
 export interface DriverStanding extends Driver {
   color: string
   points: number

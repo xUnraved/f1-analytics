@@ -35,11 +35,18 @@ public class ReplayService {
     /** RAM-Cache für bereits gebaute ReplayData (ergänzt den DB-Cache) */
     private final Map<Integer, ReplayData> ramCache = new ConcurrentHashMap<>();
 
+    /** Pro-Session-Lock: verhindert, dass parallele Anfragen (z.B. Hintergrund-Prefetch
+     *  und ein gleichzeitiger manueller Abruf) unabhängig voneinander dieselben GPS-Daten
+     *  laden und dadurch mehrfach in die DB speichern (führte zu Duplikaten und ruckeligem Replay). */
+    private final Map<Integer, Object> sessionLocks = new ConcurrentHashMap<>();
+
     public record ReplayDriver(int num, String abbr, String name, String team, String color) {}
 
-    public record ReplayFrame(int t, Map<Integer, double[]> p) {}
+    /** t = Sekunden seit Fensterbeginn, mit Sub-Sekunden-Präzision (reale GPS-Zeitstempel,
+     *  nicht auf 1Hz gerundet — siehe buildFrames). */
+    public record ReplayFrame(double t, Map<Integer, double[]> p) {}
 
-    public record ReplayData(List<ReplayDriver> drivers, List<ReplayFrame> frames, int duration) {}
+    public record ReplayData(List<ReplayDriver> drivers, List<ReplayFrame> frames, double duration) {}
 
     public void clearReplay(int sessionKey) {
         ramCache.remove(sessionKey);
@@ -52,22 +59,31 @@ public class ReplayService {
         ReplayData cached = ramCache.get(sessionKey);
         if (cached != null) return cached;
 
-        // 2. PostgreSQL — Positionen bereits gespeichert?
-        if (dataStore.locationsExistForSession(sessionKey)) {
-            LOG.infof("Replay %d: aus PostgreSQL geladen", sessionKey);
-            ReplayData fromDb = buildFromDb(sessionKey);
-            ramCache.put(sessionKey, fromDb);
-            return fromDb;
-        }
+        // Ab hier nur ein Thread pro Session gleichzeitig — sonst könnten parallele
+        // Aufrufer (Prefetch + manueller Abruf) beide "nicht vorhanden" sehen und
+        // beide unabhängig voneinander von der API laden und speichern (Duplikate).
+        Object lock = sessionLocks.computeIfAbsent(sessionKey, k -> new Object());
+        synchronized (lock) {
+            cached = ramCache.get(sessionKey);
+            if (cached != null) return cached;
 
-        // 3. OpenF1 API abrufen, in DB speichern, zurückgeben
-        LOG.infof("Replay %d: von OpenF1 API laden ...", sessionKey);
-        ReplayData fresh = buildFromApi(sessionKey, sessionDateStart);
-        // Leere Ergebnisse NICHT cachen — nächste Anfrage soll es erneut versuchen (z.B. nach einer Live-Session)
-        if (!fresh.frames().isEmpty()) {
-            ramCache.put(sessionKey, fresh);
+            // 2. PostgreSQL — Positionen bereits gespeichert?
+            if (dataStore.locationsExistForSession(sessionKey)) {
+                LOG.infof("Replay %d: aus PostgreSQL geladen", sessionKey);
+                ReplayData fromDb = buildFromDb(sessionKey);
+                ramCache.put(sessionKey, fromDb);
+                return fromDb;
+            }
+
+            // 3. OpenF1 API abrufen, in DB speichern, zurückgeben
+            LOG.infof("Replay %d: von OpenF1 API laden ...", sessionKey);
+            ReplayData fresh = buildFromApi(sessionKey, sessionDateStart);
+            // Leere Ergebnisse NICHT cachen — nächste Anfrage soll es erneut versuchen (z.B. nach einer Live-Session)
+            if (!fresh.frames().isEmpty()) {
+                ramCache.put(sessionKey, fresh);
+            }
+            return fresh;
         }
-        return fresh;
     }
 
     private ReplayData buildFromDb(int sessionKey) {
@@ -75,12 +91,12 @@ public class ReplayService {
         if (rows.isEmpty()) return empty();
 
         Map<Integer, ReplayDriver> driverMap = loadDriversFromSession(sessionKey);
-        TreeMap<Integer, Map<Integer, double[]>> bySecond = new TreeMap<>();
+        TreeMap<Long, Map<Integer, double[]>> byMs = new TreeMap<>();
         for (F1LocationEntity loc : rows) {
-            bySecond.computeIfAbsent(loc.tSeconds, k -> new HashMap<>())
+            byMs.computeIfAbsent(loc.tMs, k -> new HashMap<>())
                     .put(loc.driverNumber, new double[]{loc.x, loc.y});
         }
-        return buildFrames(bySecond, driverMap);
+        return buildFrames(byMs, driverMap);
     }
 
     private Map<Integer, ReplayDriver> loadDriversFromSession(int sessionKey) {
@@ -109,12 +125,15 @@ public class ReplayService {
             return empty();
         }
 
-        // Zeitfenster berechnen (parseIso nimmt UTC an wenn kein Offset vorhanden)
+        // Zeitfenster berechnen (parseIso nimmt UTC an wenn kein Offset vorhanden).
+        // Beginnt genau am Rennstart (kein Vorlauf mehr) — die Formationsrunde/Startaufstellung
+        // wird nicht gebraucht und hat bei voller GPS-Auflösung (~4Hz) das Datenvolumen
+        // spürbar aufgebläht.
         long raceStartMs = (sessionDateStart != null && !sessionDateStart.isBlank())
                 ? parseIso(sessionDateStart) : 0;
-        long from = raceStartMs > 0 ? raceStartMs - 30 * 60_000L : 0;
+        long from = raceStartMs > 0 ? raceStartMs : 0;
         long to   = raceStartMs > 0 ? raceStartMs + 4 * 3600_000L : Long.MAX_VALUE;
-        LOG.infof("Replay %d: lade GPS pro Fahrer, Zeitfenster %s ± 30min/4h …",
+        LOG.infof("Replay %d: lade GPS pro Fahrer, Zeitfenster ab Rennstart %s + 4h …",
                 sessionKey, sessionDateStart);
 
         List<OpenF1LocationDto> locations = new ArrayList<>();
@@ -140,21 +159,26 @@ public class ReplayService {
                 .min()
                 .orElse(raceStartMs > 0 ? raceStartMs : 0);
 
-        TreeMap<Integer, Map<Integer, double[]>> bySecond = new TreeMap<>();
+        // Reale Zeitstempel (Millisekunden seit Fensterbeginn) statt auf 1Hz gerundeter
+        // Sekunden-Buckets: OpenF1 liefert GPS-Updates mit ~3-4Hz, ein Sekunden-Bucket
+        // hätte pro Fahrer/Sekunde alle bis auf ein Sample verworfen (überschrieben) —
+        // das war die Ursache für das Ruckeln im Replay (Interpolation über künstlich
+        // ausgedünnte 1Hz-Stützpunkte statt über die tatsächliche GPS-Auflösung).
+        TreeMap<Long, Map<Integer, double[]>> byMs = new TreeMap<>();
         for (OpenF1LocationDto loc : locations) {
             if (loc.driverNumber() == null) continue;
             long ts = parseIso(loc.date());
             if (ts <= 0) continue;
-            int sec = (int) ((ts - startMs) / 1000);
-            if (sec < 0) continue;
-            bySecond.computeIfAbsent(sec, k -> new HashMap<>())
+            long ms = ts - startMs;
+            if (ms < 0) continue;
+            byMs.computeIfAbsent(ms, k -> new HashMap<>())
                     .put(loc.driverNumber(), new double[]{loc.x(), loc.y()});
         }
 
-        if (bySecond.isEmpty()) return empty();
+        if (byMs.isEmpty()) return empty();
 
         List<F1LocationEntity> toSave = new ArrayList<>();
-        for (Map.Entry<Integer, Map<Integer, double[]>> e : bySecond.entrySet()) {
+        for (Map.Entry<Long, Map<Integer, double[]>> e : byMs.entrySet()) {
             for (Map.Entry<Integer, double[]> d : e.getValue().entrySet()) {
                 toSave.add(F1DataStore.location(sessionKey, d.getKey(), e.getKey(), d.getValue()[0], d.getValue()[1]));
             }
@@ -162,29 +186,31 @@ public class ReplayService {
         dataStore.saveLocations(toSave);
         LOG.infof("Replay %d: %d Positionen in DB gespeichert", sessionKey, toSave.size());
 
-        return buildFrames(bySecond, driverMap);
+        return buildFrames(byMs, driverMap);
     }
 
-    private static ReplayData buildFrames(TreeMap<Integer, Map<Integer, double[]>> bySecond,
+    // Baut EIN Frame pro real gemeldetem Zeitstempel (kein künstliches Fortschreiben
+    // auf ein dichtes Sekunden-Raster mehr) — jedes Frame enthält nur die Fahrer, die zu
+    // diesem exakten Zeitpunkt tatsächlich ein GPS-Update hatten. Das Frontend rekonstruiert
+    // daraus ohnehin schon die echte Zeitreihe pro Fahrer (buildDriverSeries), ein dichtes
+    // Raster mit fortgeschriebenen Duplikaten wäre nur unnötiger Ballast im Payload.
+    private static ReplayData buildFrames(TreeMap<Long, Map<Integer, double[]>> byMs,
                                            Map<Integer, ReplayDriver> driverMap) {
-        int maxSec = bySecond.lastKey();
-        List<ReplayFrame> frames = new ArrayList<>(maxSec + 1);
-        Map<Integer, double[]> lastPos = new HashMap<>();
-        for (int t = 0; t <= maxSec; t++) {
-            Map<Integer, double[]> snap = bySecond.get(t);
-            if (snap != null) lastPos.putAll(snap);
-            if (!lastPos.isEmpty()) frames.add(new ReplayFrame(t, new HashMap<>(lastPos)));
+        long maxMs = byMs.lastKey();
+        List<ReplayFrame> frames = new ArrayList<>(byMs.size());
+        Set<Integer> active = new HashSet<>();
+        for (Map.Entry<Long, Map<Integer, double[]>> e : byMs.entrySet()) {
+            frames.add(new ReplayFrame(e.getKey() / 1000.0, e.getValue()));
+            active.addAll(e.getValue().keySet());
         }
 
-        Set<Integer> active = new HashSet<>();
-        for (ReplayFrame f : frames) active.addAll(f.p().keySet());
         List<ReplayDriver> drivers = new ArrayList<>();
         for (int num : active) {
             ReplayDriver d = driverMap.get(num);
             drivers.add(d != null ? d : new ReplayDriver(num, "#" + num, "#" + num, "—", "#888888"));
         }
 
-        return new ReplayData(drivers, frames, maxSec);
+        return new ReplayData(drivers, frames, maxMs / 1000.0);
     }
 
     private static ReplayData empty() {

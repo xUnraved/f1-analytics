@@ -165,11 +165,11 @@ public class F1DataStore {
     }
 
     public static F1LocationEntity location(int sessionKey, int driverNumber,
-                                             int tSeconds, double x, double y) {
+                                             long tMs, double x, double y) {
         F1LocationEntity e = new F1LocationEntity();
         e.sessionKey    = sessionKey;
         e.driverNumber  = driverNumber;
-        e.tSeconds      = tSeconds;
+        e.tMs           = tMs;
         e.x             = x;
         e.y             = y;
         return e;
