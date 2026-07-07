@@ -10,6 +10,22 @@
       </div>
 
       <div class="head-right">
+        <button
+          v-if="nextRace && cd"
+          type="button"
+          class="next-race mono"
+          :class="{ raceday: cd.live }"
+          :title="t('header.jumpTo')"
+          @click="goToNextRace"
+        >
+          <span class="nr-label">{{ cd.live ? t('header.raceDay') : t('header.next') }}</span>
+          <span class="nr-gp">{{ nextRace.gp }}</span>
+          <span v-if="!cd.live" class="nr-cd">
+            <template v-if="cd.d > 0">{{ cd.d }}{{ t('header.unitDays') }}</template>{{ pad(cd.h) }}:{{ pad(cd.m) }}:{{ pad(cd.s) }}
+          </span>
+          <span v-else class="nr-live-flag">🏁</span>
+        </button>
+
         <div class="live"><span class="dot"></span>{{ t('header.live') }}</div>
         <FSelect :model-value="store.year" :options="yearOptions" width="116px" @change="onYear" />
         <button class="refresh-btn" :class="{ spinning: refreshing }" :disabled="refreshing" :title="t('header.refreshSeason')" @click="onRefreshSeason">
@@ -25,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import FSelect from '@/components/ui/FSelect.vue'
@@ -36,6 +52,63 @@ const store = useSeasonStore()
 const refreshing = ref(false)
 
 const yearOptions = computed(() => store.years.map((y) => ({ value: y, label: String(y) })))
+
+const nowTs = ref(Date.now())
+let timer: number | undefined
+
+onMounted(() => {
+  timer = window.setInterval(() => {
+    nowTs.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (timer !== undefined) window.clearInterval(timer)
+})
+
+const nextRace = computed(() => store.races.find((r) => !r.completed) ?? null)
+
+const raceTs = computed<number | null>(() => {
+  const r = nextRace.value
+  if (!r) return null
+  const withStart = r as unknown as { sessionDateStart?: string }
+  if (withStart.sessionDateStart) {
+    const ts = Date.parse(withStart.sessionDateStart)
+    if (!isNaN(ts)) return ts
+  }
+  if (r.date) {
+    const ts = Date.parse(r.date + 'T14:00:00')
+    if (!isNaN(ts)) return ts
+  }
+  return null
+})
+
+const cd = computed(() => {
+  if (raceTs.value == null) return null
+  let diff = raceTs.value - nowTs.value
+  if (diff <= 0) return { live: true, d: 0, h: 0, m: 0, s: 0 }
+  const d = Math.floor(diff / 86_400_000)
+  diff -= d * 86_400_000
+  const h = Math.floor(diff / 3_600_000)
+  diff -= h * 3_600_000
+  const m = Math.floor(diff / 60_000)
+  diff -= m * 60_000
+  const s = Math.floor(diff / 1_000)
+  return { live: false, d, h, m, s }
+})
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function goToNextRace() {
+  const i = store.races.findIndex((r) => !r.completed)
+  if (i < 0) return
+  store.openRace(i)
+  window.setTimeout(() => {
+    document.querySelector('.stabs')?.scrollIntoView({ behavior: 'smooth' })
+  }, 60)
+}
 
 function onYear(v: number | string) {
   store.selectYear(Number(v))
@@ -129,6 +202,68 @@ function toggleLocale() {
   gap: 12px;
 }
 
+.next-race {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 10px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--surface) 70%, transparent));
+  max-width: 480px;
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color var(--dur-fast, 0.15s) ease, box-shadow var(--dur-fast, 0.15s) ease, transform var(--dur-fast, 0.15s) ease;
+}
+
+.next-race:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 18px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+.next-race.raceday {
+  border-color: var(--accent);
+  animation: raceday-pulse 1.8s infinite;
+}
+
+@keyframes raceday-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 30, 30, 0.4); }
+  70% { box-shadow: 0 0 0 9px rgba(255, 30, 30, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 30, 30, 0); }
+}
+
+.nr-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--ls-3, 0.22em);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.nr-gp {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nr-cd {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.nr-live-flag {
+  font-size: 15px;
+}
+
 .refresh-btn,
 .locale-btn {
   background: none;
@@ -195,8 +330,18 @@ function toggleLocale() {
   100% { box-shadow: 0 0 0 0 rgba(255, 30, 30, 0); }
 }
 
+@media (max-width: 1180px) {
+  .nr-gp {
+    display: none;
+  }
+  .next-race {
+    max-width: 190px;
+  }
+}
+
 @media (max-aspect-ratio: 13/16) {
   .brand-sub,
-  .live { display: none; }
+  .live,
+  .next-race { display: none; }
 }
 </style>

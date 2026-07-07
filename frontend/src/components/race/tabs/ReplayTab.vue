@@ -289,8 +289,8 @@ function computeBounds(d: ReplayData) {
   const angle = Math.atan2(2 * cxy, cxx - cyy) / 2
   _cosA = Math.cos(angle); _sinA = Math.sin(angle)
 
-  const rxs = new Array<number>(n)
-  const rys = new Array<number>(n)
+  const rxs: number[] = Array.from({ length: n }, () => 0)
+  const rys: number[] = Array.from({ length: n }, () => 0)
   for (let i = 0; i < n; i++) {
     const p = pts[i]!
     const dx = p[0] - _meanX, dy = p[1] - _meanY

@@ -41,11 +41,11 @@
 
       <div class="tiles" :style="tilesCols">
         <div
-          v-for="(t, i) in selected"
-          :key="t.team"
+          v-for="(tm, i) in selected"
+          :key="tm.team"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="`--dc:${dcolor(t)}`"
+          :style="`--dc:${dcolor(tm)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -53,17 +53,17 @@
           @drop="onDrop(i)"
           @dragend="resetDrag"
         >
-          <span class="tile-photo team" :style="{ background: dcolor(t) }">{{ teamInitials(t.team) }}</span>
+          <span class="tile-photo team" :style="{ background: dcolor(tm) }">{{ teamInitials(tm.team) }}</span>
           <span class="tile-info">
-            <span class="tile-abbr">{{ short(t.team) }}</span>
-            <span class="tile-name">{{ t.drivers.map((d) => d.abbr).join(' · ') }}</span>
-            <span class="tile-team">P{{ rank(t) }} · {{ t.points }} PKT</span>
+            <span class="tile-abbr">{{ short(tm.team) }}</span>
+            <span class="tile-name">{{ tm.drivers.map((d) => d.abbr).join(' · ') }}</span>
+            <span class="tile-team">P{{ rank(tm) }} · {{ tm.points }} PKT</span>
           </span>
           <span class="tile-score">
-            <span class="tile-score-val">{{ f1Text(t) }}</span>
+            <span class="tile-score-val">{{ f1Text(tm) }}</span>
             <span class="tile-score-lbl">F1ALYTICS Ø</span>
           </span>
-          <button type="button" class="tile-x" @click.stop="removeTeam(t.team)" :aria-label="t('common.remove')">×</button>
+          <button type="button" class="tile-x" @click.stop="removeTeam(tm.team)" :aria-label="t('common.remove')">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
           {{ t('common.addTeam') }}
@@ -1051,5 +1051,137 @@ function dcolor(t: TeamStanding): string {
   .dash {
     grid-template-columns: 1fr;
   }
+}
+
+.panel > * {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.panel > :nth-child(2) {
+  animation-delay: 0.06s;
+}
+.panel > :nth-child(3) {
+  animation-delay: 0.12s;
+}
+.panel > :nth-child(4) {
+  animation-delay: 0.18s;
+}
+.panel > :nth-child(5) {
+  animation-delay: 0.24s;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.card-title::before {
+  content: '';
+  width: 16px;
+  height: 3px;
+  flex: none;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 25%, transparent));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+
+.search-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.sug {
+  transition: background 0.15s ease;
+}
+.sug:hover {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-2));
+}
+
+.tile {
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--dc, var(--line)) 30%, var(--line));
+  background:
+    radial-gradient(130px circle at 100% 0%, color-mix(in srgb, var(--dc, transparent) 15%, transparent), transparent 70%),
+    linear-gradient(130deg, color-mix(in srgb, var(--dc, transparent) 9%, transparent), transparent 45%),
+    var(--surface-2);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.tile::before {
+  top: 0;
+  bottom: 0;
+  border-radius: 0;
+  box-shadow: 4px 0 16px -5px var(--dc, var(--accent));
+}
+.tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--dc, var(--accent)) 55%, var(--line));
+  box-shadow: 0 16px 28px -18px rgba(0, 0, 0, 0.9);
+}
+.tile.dragging {
+  transform: scale(0.98);
+  opacity: 0.75;
+}
+.tile-score-val {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--dc, var(--accent)) 45%, transparent);
+}
+.legend span {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 4px 11px 4px 9px;
+}
+
+.btrack {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+}
+.bfill {
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.r-poly {
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.45));
+}
+.chart polyline {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+}
+.grid .row {
+  transition: background 0.12s ease;
+}
+.grid .row:hover {
+  background: rgba(255, 255, 255, 0.022);
+}
+.val.best {
+  color: var(--accent);
+  font-weight: 700;
+}
+.val.best::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent);
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.dpick button {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dpick button:hover {
+  transform: translateY(-1px);
+}
+.dpick button.on {
+  box-shadow: 0 0 16px -6px currentColor;
 }
 </style>

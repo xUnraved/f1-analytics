@@ -14,6 +14,7 @@
           <li>{{ t('tippspiel.hero.bullet2', { pts: 5 }) }}</li>
           <li>{{ t('tippspiel.hero.bullet3', { pts: 5 }) }}</li>
           <li>{{ t('tippspiel.hero.bullet4', { pts: 3 }) }}</li>
+          <li>{{ t('tippspiel.hero.bullet5', { pts: 4 }) }}</li>
         </ul>
       </div>
 
@@ -216,7 +217,44 @@
             <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
           </div>
         </article>
+
+        <article class="tip-card h2h-card" :class="{ done: !!myTipps.H2H }">
+          <div class="tip-head">
+            <div class="tip-cat-row">
+              <span class="tip-icon" aria-hidden="true">⚔️</span>
+              <span class="tip-cat mono">{{ t('tippspiel.tip.h2h') }}</span>
+            </div>
+            <span class="tip-pts mono">+4</span>
+          </div>
+          <p class="tip-desc">{{ t('tippspiel.tip.h2hQ') }}</p>
+          <div class="podium-picks">
+            <div class="podium-slot">
+              <span class="ps-pos mono">A</span>
+              <select v-model="h2hPicks[0]">
+                <option value="">—</option>
+                <option v-for="d in h2hOptions(0)" :key="'h0-' + d.abbr" :value="d.abbr">{{ d.abbr }}</option>
+              </select>
+            </div>
+            <span class="h2h-vs mono">{{ t('tippspiel.tip.h2hVs') }}</span>
+            <div class="podium-slot">
+              <span class="ps-pos mono">B</span>
+              <select v-model="h2hPicks[1]">
+                <option value="">—</option>
+                <option v-for="d in h2hOptions(1)" :key="'h1-' + d.abbr" :value="d.abbr">{{ d.abbr }}</option>
+              </select>
+            </div>
+            <button type="button" class="btn primary" :disabled="!h2hComplete || saving.H2H" @click="save('H2H')">
+              {{ myTipps.H2H ? t('tippspiel.tip.change') : t('tippspiel.tip.bet') }}
+            </button>
+          </div>
+          <div v-if="myTipps.H2H" class="my-tipp">
+            <span class="mt-pick">{{ formatH2H(myTipps.H2H.pick) }}</span>
+            <span class="mt-status mono">{{ t('tippspiel.tip.submitted') }}</span>
+          </div>
+        </article>
       </section>
+
+      <ForecastPanel />
 
       <section v-if="currentRace && hasCrowdPicks" class="card community-card">
         <div class="card-title">{{ t('tippspiel.community.title') }}{{ currentRace.round }}</div>
@@ -261,6 +299,8 @@
         </div>
         <div v-else class="empty">{{ t('tippspiel.leaderboard.empty') }}</div>
       </section>
+
+      <GroupsPanel />
     </div>
   </div>
 </template>
@@ -271,6 +311,8 @@ import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import { useAuthStore, authHeaders } from '@/stores/authStore'
 import LoadingBar from '@/components/ui/LoadingBar.vue'
+import ForecastPanel from '@/components/tippspiel/ForecastPanel.vue'
+import GroupsPanel from '@/components/tippspiel/GroupsPanel.vue'
 
 const { t, locale } = useI18n()
 const store = useSeasonStore()
@@ -321,7 +363,7 @@ interface RaceInfo {
   tipsOpen: boolean
 }
 
-const categories = ['WINNER', 'POLE', 'PODIUM', 'FASTEST_LAP'] as const
+const categories = ['WINNER', 'POLE', 'PODIUM', 'FASTEST_LAP', 'H2H'] as const
 type Cat = (typeof categories)[number]
 
 const mode = ref<'login' | 'register'>('login')
@@ -337,9 +379,10 @@ const myAllTipps = ref<Tipp[]>([])
 const leaderboard = ref<LeaderboardEntry[]>([])
 const crowdRaw = ref<CrowdPickItem[]>([])
 
-const picks = reactive<Record<Cat, string>>({ WINNER: '', POLE: '', PODIUM: '', FASTEST_LAP: '' })
+const picks = reactive<Record<Cat, string>>({ WINNER: '', POLE: '', PODIUM: '', FASTEST_LAP: '', H2H: '' })
 const podiumPicks = ref<string[]>(['', '', ''])
-const saving = reactive<Record<Cat, boolean>>({ WINNER: false, POLE: false, PODIUM: false, FASTEST_LAP: false })
+const h2hPicks = ref<string[]>(['', ''])
+const saving = reactive<Record<Cat, boolean>>({ WINNER: false, POLE: false, PODIUM: false, FASTEST_LAP: false, H2H: false })
 
 const currentRace = computed<RaceInfo | null>(
   () => upcoming.value.find((r) => r.round === selectedRound.value) ?? upcoming.value[0] ?? null,
@@ -354,8 +397,19 @@ function podiumOptions(slot: number) {
 
 const podiumComplete = computed(() => podiumPicks.value.every((p) => p) && new Set(podiumPicks.value).size === 3)
 
+function h2hOptions(slot: number) {
+  const other = h2hPicks.value[slot === 0 ? 1 : 0]
+  return driverOptions.value.filter((d) => d.abbr !== other)
+}
+const h2hComplete = computed(() => !!h2hPicks.value[0] && !!h2hPicks.value[1] && h2hPicks.value[0] !== h2hPicks.value[1])
+
+function formatH2H(pick: string): string {
+  const [a, b] = pick.split('|')
+  return (a ?? '?') + ' › ' + (b ?? '?')
+}
+
 const myTipps = computed<Record<Cat, Tipp | null>>(() => {
-  const r: Record<Cat, Tipp | null> = { WINNER: null, POLE: null, PODIUM: null, FASTEST_LAP: null }
+  const r: Record<Cat, Tipp | null> = { WINNER: null, POLE: null, PODIUM: null, FASTEST_LAP: null, H2H: null }
   if (!currentRace.value) return r
   for (const tipp of myAllTipps.value) {
     if (tipp.round === currentRace.value.round && (tipp.category as Cat) in r) {
@@ -370,7 +424,7 @@ const mySettled = computed(() => myAllTipps.value.filter((tipp) => tipp.points !
 const myOpen = computed(() => myAllTipps.value.filter((tipp) => tipp.points == null).length)
 
 const crowdByCat = computed<Record<Cat, CrowdPickItem[]>>(() => {
-  const r: Record<Cat, CrowdPickItem[]> = { WINNER: [], POLE: [], PODIUM: [], FASTEST_LAP: [] }
+  const r: Record<Cat, CrowdPickItem[]> = { WINNER: [], POLE: [], PODIUM: [], FASTEST_LAP: [], H2H: [] }
   for (const p of crowdRaw.value) {
     if ((p.category as Cat) in r) r[p.category as Cat].push(p)
   }
@@ -388,17 +442,20 @@ function categoryLabel(cat: Cat): string {
   if (cat === 'WINNER') return t('tippspiel.tip.winner')
   if (cat === 'POLE') return t('tippspiel.tip.pole')
   if (cat === 'PODIUM') return t('tippspiel.tip.podium')
+  if (cat === 'H2H') return t('tippspiel.tip.h2h')
   return t('tippspiel.tip.fastest')
 }
 function categoryIcon(cat: Cat): string {
-  return cat === 'WINNER' ? '🏆' : cat === 'POLE' ? '⚡' : cat === 'PODIUM' ? '🥇' : '⏱'
+  return cat === 'WINNER' ? '🏆' : cat === 'POLE' ? '⚡' : cat === 'PODIUM' ? '🥇' : cat === 'H2H' ? '⚔️' : '⏱'
 }
 
 function formatPodium(pick: string): string {
   return pick.split('|').map((p, i) => `P${i + 1} ${p}`).join(' · ')
 }
 function formatCrowdPick(cat: Cat, pick: string): string {
-  return cat === 'PODIUM' ? pick.replace(/\|/g, '·') : pick
+  if (cat === 'PODIUM') return pick.replace(/\|/g, '·')
+  if (cat === 'H2H') return pick.replace('|', ' › ')
+  return pick
 }
 
 function initial(s: string): string {
@@ -507,6 +564,10 @@ async function save(cat: Cat) {
     if (!podiumComplete.value) return
     pick = podiumPicks.value.join('|')
   }
+  if (cat === 'H2H') {
+    if (!h2hComplete.value) return
+    pick = h2hPicks.value.join('|')
+  }
   if (!pick) return
   saving[cat] = true
   try {
@@ -553,6 +614,12 @@ watch(myTipps, (mt) => {
     podiumPicks.value = [parts[0] ?? '', parts[1] ?? '', parts[2] ?? '']
   } else {
     podiumPicks.value = ['', '', '']
+  }
+  if (mt.H2H) {
+    const parts = mt.H2H.pick.split('|')
+    h2hPicks.value = [parts[0] ?? '', parts[1] ?? '']
+  } else {
+    h2hPicks.value = ['', '']
   }
 })
 
@@ -1044,5 +1111,13 @@ onMounted(async () => {
   .rh-title { font-size: 30px; }
   .lb-row { grid-template-columns: 32px 28px 1fr auto; }
   .lb-stats { display: none; }
+}
+
+.h2h-vs {
+  align-self: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
 }
 </style>

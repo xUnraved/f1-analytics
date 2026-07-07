@@ -38,8 +38,9 @@ public class BettingService {
     public static final String CAT_POLE = "POLE";
     public static final String CAT_PODIUM = "PODIUM";
     public static final String CAT_FASTEST_LAP = "FASTEST_LAP";
+    public static final String CAT_H2H = "H2H";
 
-    private static final List<String> CATEGORIES = List.of(CAT_WINNER, CAT_POLE, CAT_PODIUM, CAT_FASTEST_LAP);
+    private static final List<String> CATEGORIES = List.of(CAT_WINNER, CAT_POLE, CAT_PODIUM, CAT_FASTEST_LAP, CAT_H2H);
 
     @Transactional
     public TippDto submit(User user, int year, int round, String category, String pick) {
@@ -167,7 +168,7 @@ public class BettingService {
         t.settledAt = Instant.now();
     }
 
-    private int computePoints(SeasonService.Race race, String category, String pick) {
+    int computePoints(SeasonService.Race race, String category, String pick) {
         switch (category) {
             case CAT_WINNER -> {
                 if (race.result() == null || race.result().isEmpty()) return 0;
@@ -191,10 +192,26 @@ public class BettingService {
                 if (race.fastestLap() == null) return 0;
                 return matches(pick, race.fastestLap().abbr()) ? 3 : 0;
             }
+            case CAT_H2H -> {
+                String[] parts = pick.split("\\|");
+                if (parts.length != 2) return 0;
+                Integer posA = finishPosition(race, parts[0]);
+                Integer posB = finishPosition(race, parts[1]);
+                if (posA == null || posB == null) return 0;
+                return posA < posB ? 4 : 0;
+            }
             default -> {
                 return 0;
             }
         }
+    }
+
+    private static Integer finishPosition(SeasonService.Race race, String abbr) {
+        if (race.result() == null || abbr == null) return null;
+        for (SeasonService.ResultRow row : race.result()) {
+            if (row.abbr() != null && row.abbr().equalsIgnoreCase(abbr.trim())) return row.pos();
+        }
+        return null;
     }
 
     private static boolean matches(String a, String b) {
@@ -213,7 +230,7 @@ public class BettingService {
         if (!CATEGORIES.contains(category)) throw new BadRequestException("Unbekannte Kategorie: " + category);
     }
 
-    private void validatePick(String category, String pick) {
+    void validatePick(String category, String pick) {
         if (pick == null || pick.trim().isEmpty()) throw new BadRequestException("Tipp fehlt.");
         if (CAT_PODIUM.equals(category)) {
             String[] parts = pick.split("\\|");
@@ -224,6 +241,15 @@ public class BettingService {
             if (parts[0].equalsIgnoreCase(parts[1]) || parts[1].equalsIgnoreCase(parts[2])
                     || parts[0].equalsIgnoreCase(parts[2])) {
                 throw new BadRequestException("Podium-Tipp: alle 3 Fahrer müssen unterschiedlich sein.");
+            }
+        }
+        if (CAT_H2H.equals(category)) {
+            String[] parts = pick.split("\\|");
+            if (parts.length != 2 || parts[0].trim().isEmpty() || parts[1].trim().isEmpty()) {
+                throw new BadRequestException("Head-to-Head braucht 2 Fahrer (Format: ABBR|ABBR).");
+            }
+            if (parts[0].trim().equalsIgnoreCase(parts[1].trim())) {
+                throw new BadRequestException("Head-to-Head: beide Fahrer müssen unterschiedlich sein.");
             }
         }
     }

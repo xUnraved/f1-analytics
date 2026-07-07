@@ -134,6 +134,45 @@ public class SeasonService {
             Map.entry("Yas Marina Circuit", new double[]{24.47, 54.6})
     );
 
+    private static final Map<String, String> TEAM_COLOR_FALLBACK = Map.ofEntries(
+            Map.entry("mclaren", "#FF8000"),
+            Map.entry("ferrari", "#E8002D"),
+            Map.entry("red bull", "#3671C6"),
+            Map.entry("mercedes", "#27F4D2"),
+            Map.entry("aston martin", "#229971"),
+            Map.entry("alpine", "#0093CC"),
+            Map.entry("williams", "#64C4FF"),
+            Map.entry("racing bulls", "#6692FF"),
+            Map.entry("sauber", "#52E252"),
+            Map.entry("audi", "#52E252"),
+            Map.entry("haas", "#B6BABD"),
+            Map.entry("cadillac", "#D4AF37")
+    );
+
+    private String resolveColor(String team, String color) {
+        boolean valid = color != null && !color.isBlank() && !"#888888".equals(color);
+        if (valid) return color;
+        if (team != null) {
+            String t = team.toLowerCase(java.util.Locale.ROOT);
+            for (Map.Entry<String, String> e : TEAM_COLOR_FALLBACK.entrySet()) {
+                if (t.contains(e.getKey())) return e.getValue();
+            }
+        }
+        return color != null ? color : "#888888";
+    }
+
+    private String resolveHeadshot(String headshot, int num, String abbr) {
+        if (headshot != null && !headshot.isBlank()) return headshot;
+        de.htw.f1analytics.domain.QuizDriverEntity byNum = de.htw.f1analytics.domain.QuizDriverEntity.findById(num);
+        if (byNum != null && byNum.headshotUrl != null && !byNum.headshotUrl.isBlank()) return byNum.headshotUrl;
+        if (abbr != null) {
+            de.htw.f1analytics.domain.QuizDriverEntity byAbbr =
+                    de.htw.f1analytics.domain.QuizDriverEntity.find("abbr", abbr.toUpperCase(java.util.Locale.ROOT)).firstResult();
+            if (byAbbr != null && byAbbr.headshotUrl != null && !byAbbr.headshotUrl.isBlank()) return byAbbr.headshotUrl;
+        }
+        return headshot;
+    }
+
     private static final class Accum {
         String abbr;
         String name;
@@ -597,11 +636,11 @@ public class SeasonService {
                     : a.topSpeeds.stream().mapToInt(Integer::intValue).max().getAsInt();
             Double avgTop = a.topSpeeds.isEmpty() ? null
                     : Math.round(a.topSpeeds.stream().mapToInt(Integer::intValue).average().orElse(0) * 10.0) / 10.0;
-            drivers.add(new DriverStanding(a.abbr, a.name, a.team, a.num, a.color,
+            drivers.add(new DriverStanding(a.abbr, a.name, a.team, a.num, resolveColor(a.team, a.color),
                     a.points, a.wins, a.podiums, a.dnf,
                     List.copyOf(a.finishes), List.copyOf(a.cum), avg, best,
                     avgScore, List.copyOf(a.scores),
-                    a.headshot, maxTop, avgTop));
+                    resolveHeadshot(a.headshot, a.num, a.abbr), maxTop, avgTop));
         }
         drivers.sort(Comparator.comparingInt(DriverStanding::points).reversed());
 
@@ -612,7 +651,8 @@ public class SeasonService {
         for (Map.Entry<String, List<DriverStanding>> e : byTeam.entrySet()) {
             int pts = e.getValue().stream().mapToInt(DriverStanding::points).sum();
             int wins = e.getValue().stream().mapToInt(DriverStanding::wins).sum();
-            String color = e.getValue().isEmpty() ? "#888888" : e.getValue().get(0).color();
+            String color = resolveColor(e.getKey(),
+                    e.getValue().isEmpty() ? "#888888" : e.getValue().get(0).color());
             teams.add(new TeamStanding(e.getKey(), color, pts, wins, e.getValue()));
         }
         teams.sort(Comparator.comparingInt(TeamStanding::points).reversed());

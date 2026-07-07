@@ -61,7 +61,7 @@ public class QuizService {
             Map.entry("SGP", "Singapur")
     );
 
-    public record CircuitQuizItem(String name, String imageUrl) {}
+    public record CircuitQuizItem(String name, String imageUrl, String country) {}
 
     public record DriverQuizItem(String abbr, String name, String headshotUrl,
                                  String countryCode, String countryName, Integer birthYear) {}
@@ -78,11 +78,11 @@ public class QuizService {
     @SuppressWarnings("unchecked")
     private List<CircuitQuizItem> getCircuits() {
         List<Object[]> rows = em.createQuery(
-                        "SELECT DISTINCT s.location, s.circuitImage FROM F1SessionEntity s " +
-                        "WHERE s.sessionName = 'Race' AND s.circuitImage IS NOT NULL AND s.location IS NOT NULL")
+                        "SELECT DISTINCT s.location, s.circuitImage, s.countryName FROM F1SessionEntity s " +
+                                "WHERE s.sessionName = 'Race' AND s.circuitImage IS NOT NULL AND s.location IS NOT NULL")
                 .getResultList();
         return rows.stream()
-                .map(r -> new CircuitQuizItem((String) r[0], (String) r[1]))
+                .map(r -> new CircuitQuizItem((String) r[0], (String) r[1], (String) r[2]))
                 .toList();
     }
 

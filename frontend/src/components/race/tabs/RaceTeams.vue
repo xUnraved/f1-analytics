@@ -41,11 +41,11 @@
 
       <div class="tiles" :style="tilesCols">
         <div
-          v-for="(t, i) in selected"
-          :key="t.team"
+          v-for="(tm, i) in selected"
+          :key="tm.team"
           class="tile"
           :class="{ dragging: dragIndex === i, over: overIndex === i }"
-          :style="`--dc:${dcolor(t)}`"
+          :style="`--dc:${dcolor(tm)}`"
           draggable="true"
           @dragstart="onDragStart(i)"
           @dragover.prevent="overIndex = i"
@@ -53,17 +53,17 @@
           @drop="onDrop(i)"
           @dragend="resetDrag"
         >
-          <span class="tile-photo team" :style="{ background: dcolor(t) }">{{ teamInitials(t.team) }}</span>
+          <span class="tile-photo team" :style="{ background: dcolor(tm) }">{{ teamInitials(tm.team) }}</span>
           <span class="tile-info">
-            <span class="tile-abbr">{{ short(t.team) }}</span>
-            <span class="tile-name">{{ t.drivers.map((d) => d.abbr).join(' · ') }}</span>
-            <span class="tile-team">P{{ rank(t) }} · {{ t.points }} PKT</span>
+            <span class="tile-abbr">{{ short(tm.team) }}</span>
+            <span class="tile-name">{{ tm.drivers.map((d) => d.abbr).join(' · ') }}</span>
+            <span class="tile-team">P{{ rank(tm) }} · {{ tm.points }} PKT</span>
           </span>
           <span class="tile-score">
-            <span class="tile-score-val">{{ f1Text(t) }}</span>
+            <span class="tile-score-val">{{ f1Text(tm) }}</span>
             <span class="tile-score-lbl">F1ALYTICS Ø</span>
           </span>
-          <button type="button" class="tile-x" @click.stop="removeTeam(t.team)" :aria-label="t('common.remove')">×</button>
+          <button type="button" class="tile-x" @click.stop="removeTeam(tm.team)" :aria-label="t('common.remove')">×</button>
         </div>
         <div v-if="!selected.length" class="tiles-empty">
           {{ t('common.addTeam') }}
