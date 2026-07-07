@@ -422,6 +422,13 @@ public class SeasonService {
             if (dataStore.resultsExistForSession(rs.sessionKey)) {
                 fromApi = false;
                 List<de.htw.f1analytics.domain.F1ResultEntity> dbRows = dataStore.getResults(rs.sessionKey);
+                List<F1alyticsScore.Entry> dbEntries = new ArrayList<>();
+                for (de.htw.f1analytics.domain.F1ResultEntity r : dbRows) {
+                    dbEntries.add(new F1alyticsScore.Entry(r.driverNumber,
+                            r.team != null ? r.team : "—", r.pos, null, null,
+                            r.dnf, r.dns, r.dsq));
+                }
+                Map<Integer, F1alyticsScore.ScoreCard> dbScores = F1alyticsScore.scoreRace(dbEntries);
                 result = new ArrayList<>();
                 for (de.htw.f1analytics.domain.F1ResultEntity r : dbRows) {
                     Accum a = byNum.computeIfAbsent(r.driverNumber, k -> {
@@ -443,9 +450,11 @@ public class SeasonService {
                         if (pos <= 3) a.podiums++;
                         a.finishes.add(pos);
                     }
+                    F1alyticsScore.ScoreCard dbCard = dbScores.get(r.driverNumber);
+                    if (dbCard != null) a.scores.add(dbCard.score());
                     result.add(new ResultRow(r.abbr, r.name, r.team, r.color,
                             pos, pts, r.gapText != null ? r.gapText : "—",
-                            r.dnf, r.dns, r.dsq, r.laps, null));
+                            r.dnf, r.dns, r.dsq, r.laps, dbCard));
                 }
 
             } else {
