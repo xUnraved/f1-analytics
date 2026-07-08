@@ -48,9 +48,9 @@ Zusätzlich stellt die OpenF1-API keine Caching-Schicht bereit — bei wiederhol
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Browser (SPA)                     │
+│                    Browser (SPA)                    │
 │             Vue 3 · Pinia · vue-i18n                │
-│         http://localhost:5173                        │
+│         http://localhost:5173                       │
 └──────────────────────┬──────────────────────────────┘
                        │ HTTP / REST (JSON)
                        │ /api/*  (Vite-Proxy → :8081)
