@@ -48,6 +48,11 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Konstrukteurs-WM-Rangliste.
+ * Zeigt Teams mit Punkten, Siegen und einem Balken (Anteil an den Punkten
+ * des Führenden). pct() normiert relativ zum Führenden auf 100 %.
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

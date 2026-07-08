@@ -16,6 +16,19 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 
+/**
+ * Authentifizierungs-Service für das Tippspiel.
+ *
+ * Passwortsicherheit:
+ *   - PBKDF2WithHmacSHA256, 100.000 Iterationen, 256 Bit Schlüssellänge
+ *   - Pro-User individueller kryptographischer Salt (24 Byte, SecureRandom)
+ *   - Timing-sicherer Vergleich (constantTimeEquals) gegen Timing-Angriffe
+ *
+ * Session-Management:
+ *   - Token: 32 zufällige Bytes, URL-safe Base64-kodiert (256 Bit Entropie)
+ *   - Gültigkeitsdauer: 30 Tage (SESSION_DAYS), gespeichert in user_session
+ *   - Abgelaufene Tokens werden beim Validieren gelöscht
+ */
 @ApplicationScoped
 public class AuthService {
 
@@ -35,6 +48,7 @@ public class AuthService {
 
     public record AuthResult(String token, UserDto user) {}
 
+    /** Registriert einen neuen Benutzer und gibt direkt ein gültiges Session-Token zurück. */
     @Transactional
     public AuthResult register(String username, String email, String password) {
         validateUsername(username);
@@ -63,6 +77,7 @@ public class AuthService {
         return createSession(u);
     }
 
+    /** Validiert Login-Daten und gibt ein neues Session-Token zurück. */
     @Transactional
     public AuthResult login(String usernameOrEmail, String password) {
         if (usernameOrEmail == null || usernameOrEmail.isBlank() || password == null || password.isEmpty()) {
@@ -86,6 +101,11 @@ public class AuthService {
         if (s != null) s.delete();
     }
 
+    /**
+     * Prüft ein Token auf Gültigkeit und gibt den zugehörigen Benutzer zurück.
+     * Abgelaufene Tokens werden automatisch aus der DB gelöscht.
+     * Gibt null zurück bei ungültigem/fehlendem/abgelaufenem Token.
+     */
     @Transactional
     public User validateToken(String token) {
         if (token == null || token.isBlank()) return null;
@@ -124,6 +144,11 @@ public class AuthService {
         }
     }
 
+    /**
+     * Zeitkonstanter String-Vergleich gegen Timing-Angriffe.
+     * Normale String-Equals-Methoden brechen bei erstem Mismatch ab und lecken
+     * dadurch Timing-Informationen über die richtige Passwortlänge.
+     */
     private static boolean constantTimeEquals(String a, String b) {
         if (a == null || b == null || a.length() != b.length()) return false;
         int result = 0;

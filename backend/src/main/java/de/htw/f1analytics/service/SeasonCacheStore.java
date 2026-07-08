@@ -9,6 +9,13 @@ import org.jboss.logging.Logger;
 
 import java.time.Instant;
 
+/**
+ * Persistiert und lädt die aggregierten Saisondaten (SeasonStats) als JSON-Blob in PostgreSQL.
+ * Zweite Cache-Ebene hinter dem RAM-Cache – überlebt Quarkus-Neustarts.
+ *
+ * Bei Deserialisierungs-Fehlern (z. B. Formatänderung nach Code-Update) wird der
+ * fehlerhafte Eintrag ignoriert und ein neuer API-Abruf ausgelöst.
+ */
 @ApplicationScoped
 public class SeasonCacheStore {
 

@@ -21,6 +21,12 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Benutzerdefiniertes Dropdown-Select-Element (v-model kompatibel).
+ * Schließt sich automatisch bei Klick außerhalb (onDoc) oder Escape (onKey).
+ * Emittiert 'update:modelValue' für v-model und 'change' für direkte Reaktion.
+ * width: optionale CSS-Breite (z. B. "180px").
+ */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 type Val = number | string

@@ -19,6 +19,16 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Saison-Auswahlrad mit 3D-Rotations-Effekt.
+ *
+ * Rendert die verfügbaren Jahre als scroll-snappende Liste mit perspektivischer
+ * rotateX-Transformation, so dass nicht-fokussierte Items wie auf einem Rad
+ * nach hinten gekippt erscheinen. Nach 130 ms Scroll-Inaktivität wird das
+ * nächste Item eingerastet und selectYear() aufgerufen.
+ * suppressSettle verhindert, dass programmatisches Scrollen (centerOnYear)
+ * denselben Settle-Timer auslöst.
+ */
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useSeasonStore } from '@/stores/seasonStore'
 

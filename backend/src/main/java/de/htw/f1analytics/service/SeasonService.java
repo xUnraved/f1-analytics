@@ -27,6 +27,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
+/**
+ * Aggregiert alle F1-Saisondaten aus der OpenF1-API und verwaltet einen zweistufigen Cache.
+ *
+ * Architektur:
+ *   1. RAM-Cache (ConcurrentHashMap)  – schnellster Pfad, verloren bei Neustart
+ *   2. DB-Cache (SeasonCacheStore)    – JSON-Blob in PostgreSQL, überlebt Neustarts
+ *   3. OpenF1-API                     – Quelle der Wahrheit, langsam (Rate-Limit)
+ *
+ * Beim ersten Aufruf für ein Jahr wird ein virtueller Thread gestartet, der die API
+ * asynchron abfragt und den Cache befüllt. Solange geladen wird, liefert seasonStats()
+ * eine "loading: true"-Antwort.
+ *
+ * API-Throttle: 2500 ms zwischen allen Anfragen + Semaphore (ein gleichzeitiger Build).
+ * Rate-Limit-Antwort (HTTP 429): 65 s Pause, bis zu 4 Versuche.
+ * Live-Session-Sperre (HTTP 401 "Live F1 session"): 2 min Cooldown.
+ */
 @ApplicationScoped
 public class SeasonService {
 
@@ -190,6 +206,74 @@ public class SeasonService {
         final List<Integer> topSpeeds = new ArrayList<>();
     }
 
+    /** Gibt alle Saison-Jahre ab START_YEAR bis heute zurück. */
+    public List<Integer> years() {
+        int cur = Year.now().getValue();
+        List<Integer> ys = new ArrayList<>();
+        for (int y = START_YEAR; y <= cur; y++) ys.add(y);
+        return ys;
+    }
+
+    /**
+     * Gibt die aggregierten Saison-Statistiken zurück.
+     * Cache-Hierarchie: RAM → DB → API (asynchroner Hintergrundthread).
+     * Gibt bei Cache-Miss sofort loading=true zurück, damit das Frontend pollen kann.
+     */
+    public SeasonStats seasonStats(int year) {
+
+        SeasonStats cached = cache.get(year);
+        if (cached != null) return cached;
+
+        SeasonStats fromDb = cacheStore.load(year);
+        if (fromDb != null) {
+            cache.put(year, fromDb);
+            return fromDb;
+        }
+
+        // API-Cooldown: nicht alle 6s erneut versuchen wenn API geblockt ist
+        Long blockedUntil = apiBlockedUntil.get(year);
+        if (blockedUntil != null && System.currentTimeMillis() < blockedUntil) {
+            boolean liveBlocked = Boolean.TRUE.equals(liveBlockedYears.get(year));
+            return new SeasonStats(List.of(), List.of(), List.of(), true, 0, liveBlocked);
+        }
+
+        if (fetching.add(year)) {
+            Thread.ofVirtual().name("season-fetch-" + year).start(() -> {
+                try {
+                    io.quarkus.arc.Arc.container().requestContext().activate();
+                    try {
+                        buildAndCache(year);
+                    } finally {
+                        try { io.quarkus.arc.Arc.container().requestContext().terminate(); } catch (Exception ignored) {}
+                    }
+                } finally {
+                    fetching.remove(year);  // immer ausführen, auch bei Arc-Fehler
+                }
+            });
+        }
+
+        return new SeasonStats(List.of(), List.of(), List.of(), true, 0, false);
+    }
+
+    /** Stellt sicher, dass der Cache für ein Jahr befüllt ist (synchron, z. B. für CacheWarmer). */
+    @ActivateRequestContext
+    public void ensureCached(int year) {
+        if (cache.containsKey(year)) return;
+        SeasonStats fromDb = cacheStore.load(year);
+        if (fromDb != null) {
+            cache.put(year, fromDb);
+            return;
+        }
+        if (fetching.add(year)) {
+            try {
+                buildAndCache(year);
+            } finally {
+                fetching.remove(year);
+            }
+        }
+    }
+
+    /** Löscht RAM, DB-Cache und alle rohen DB-Zeilen einer Saison vollständig. */
     public void clearCache(int year) {
         cache.remove(year);
         fetching.remove(year);
@@ -231,66 +315,6 @@ public class SeasonService {
         }
         SeasonStats result = cache.get(year);
         return result != null ? result : new SeasonStats(List.of(), List.of(), List.of(), false, 0, false);
-    }
-
-    public List<Integer> years() {
-        int cur = Year.now().getValue();
-        List<Integer> ys = new ArrayList<>();
-        for (int y = START_YEAR; y <= cur; y++) ys.add(y);
-        return ys;
-    }
-
-    public SeasonStats seasonStats(int year) {
-
-        SeasonStats cached = cache.get(year);
-        if (cached != null) return cached;
-
-        SeasonStats fromDb = cacheStore.load(year);
-        if (fromDb != null) {
-            cache.put(year, fromDb);
-            return fromDb;
-        }
-
-        // API-Cooldown: nicht alle 6s erneut versuchen wenn API geblockt ist
-        Long blockedUntil = apiBlockedUntil.get(year);
-        if (blockedUntil != null && System.currentTimeMillis() < blockedUntil) {
-            boolean liveBlocked = Boolean.TRUE.equals(liveBlockedYears.get(year));
-            return new SeasonStats(List.of(), List.of(), List.of(), true, 0, liveBlocked);
-        }
-
-        if (fetching.add(year)) {
-            Thread.ofVirtual().name("season-fetch-" + year).start(() -> {
-                try {
-                    io.quarkus.arc.Arc.container().requestContext().activate();
-                    try {
-                        buildAndCache(year);
-                    } finally {
-                        try { io.quarkus.arc.Arc.container().requestContext().terminate(); } catch (Exception ignored) {}
-                    }
-                } finally {
-                    fetching.remove(year);  // immer ausführen, auch bei Arc-Fehler
-                }
-            });
-        }
-
-        return new SeasonStats(List.of(), List.of(), List.of(), true, 0, false);
-    }
-
-    @ActivateRequestContext
-    public void ensureCached(int year) {
-        if (cache.containsKey(year)) return;
-        SeasonStats fromDb = cacheStore.load(year);
-        if (fromDb != null) {
-            cache.put(year, fromDb);
-            return;
-        }
-        if (fetching.add(year)) {
-            try {
-                buildAndCache(year);
-            } finally {
-                fetching.remove(year);
-            }
-        }
     }
 
     private void buildAndCache(int year) {

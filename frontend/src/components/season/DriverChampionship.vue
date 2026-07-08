@@ -49,6 +49,12 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Fahrer-WM-Rangliste.
+ * Zeigt alle Fahrer mit Punkten, Siegen, Podien, DNF und dem F1alytics-Durchschnittsscore.
+ * P1 erhält goldenes Badge, P2 Silber, P3 Bronze.
+ * Letzte Platzierung (finishes[last]) wird in der Gap-Spalte angezeigt.
+ */
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import ScoreBadge from '@/components/ui/ScoreBadge.vue'

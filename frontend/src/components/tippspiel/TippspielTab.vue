@@ -306,6 +306,24 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Tippspiel-Hauptkomponente (Betting-Tab).
+ *
+ * Zeigt je nach Anmeldestatus:
+ *  - Nicht angemeldet: Hero-Card mit Regelübersicht + Login/Registrierungsformular.
+ *  - Angemeldet: Rennen-Strip (upcoming), Race-Hero-Banner, 5 Tipp-Karten
+ *    (WINNER/POLE/PODIUM/FASTEST_LAP/H2H), ForecastPanel, Community-Picks,
+ *    Gesamt-Leaderboard und GroupsPanel.
+ *
+ * Tipp-Kategorien und Punkte:
+ *  WINNER=10, POLE=5, PODIUM=5 (je Position korrekt), FASTEST_LAP=3, H2H=4.
+ *
+ * PODIUM-Pick: 3 Slots P1/P2/P3 mit Duplikat-Ausschluss.
+ * H2H-Pick: Fahrer A › Fahrer B (wird mit | kodiert, z. B. "VER|HAM").
+ *
+ * dataLoadStep + dataLoadPct: Fortschrittsanzeige beim Laden (4 API-Calls).
+ * reloadAll(): lädt upcoming, myTipps, crowd und leaderboard sequenziell/parallel.
+ */
 import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

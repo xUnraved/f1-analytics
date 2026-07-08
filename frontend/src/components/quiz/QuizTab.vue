@@ -264,6 +264,22 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Quiz-Hauptkomponente mit vier Spielmodi:
+ *  - circuit: 12 Fragen – Streckenbilder → Name oder Land erraten.
+ *  - driver:  12 Fragen – Fahrerfotos → Name oder Nationalität.
+ *  - season:  12 Backend-generierte Fragen zu einer Saison.
+ *  - millionaire: 15 Fragen mit Punkteleiter (100–1.000.000), Sicherheitsnetz
+ *    bei Stufe 5/10 und 3 Jokern (50:50, Publikum, Telefonjoker).
+ *
+ * Joker-Logik:
+ *  - useFifty(): entfernt 2 falsche Optionen zufällig aus remainingOptions().
+ *  - useAudience(): simuliert Publikumsabstimmung (80 % Wahrscheinlichkeit korrekt).
+ *  - usePhone(): wählt mit 90 % Wahrscheinlichkeit die korrekte Antwort.
+ *
+ * safeFallback(): gibt den höchsten SAFE_LEVEL-Betrag zurück, der noch erreicht
+ * wurde, wenn ein Spieler falsch antwortet.
+ */
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {

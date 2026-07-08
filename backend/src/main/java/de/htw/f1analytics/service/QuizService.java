@@ -12,6 +12,18 @@ import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Stellt Basis-Quiz-Daten bereit (Strecken und Fahrer) und verwaltet die Fahrerprofil-DB.
+ *
+ * Geburtsjahrsdaten (BIRTH_YEARS) werden nicht von der OpenF1-API geliefert,
+ * sondern sind statisch hinterlegt. Beim Startup (onStart) werden alle existierenden
+ * QuizDriverEntity-Einträge mit den korrekten Geburtsjahren befüllt.
+ *
+ * saveDriverIfAbsent() wird vom SeasonService aufgerufen, wenn ein neuer Fahrer
+ * aus der OpenF1-API geladen wird, um das Quiz-Profil automatisch anzulegen.
+ *
+ * Ländernamen (COUNTRY_NAMES) bilden ISO-3166-1-Alpha-3-Codes auf deutsche Namen ab.
+ */
 @ApplicationScoped
 public class QuizService {
 
@@ -92,6 +104,11 @@ public class QuizService {
                 .toList();
     }
 
+    /**
+     * Befüllt beim Quarkus-Start die birth_year-Spalte aller existierenden Fahrer aus BIRTH_YEARS.
+     * Notwendig, da Geburtsjahre nicht von der API kommen und DB-Einträge aus früheren
+     * Läufen noch keine Geburtsjahre haben.
+     */
     @Transactional
     void onStart(@Observes StartupEvent ev) {
         for (QuizDriverEntity d : QuizDriverEntity.<QuizDriverEntity>listAll()) {

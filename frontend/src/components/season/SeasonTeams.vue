@@ -201,6 +201,20 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Team-Vergleichs-Panel (bis zu 3 Teams gleichzeitig).
+ *
+ * Features:
+ *  - Suchfeld mit Autocomplete zur Team-Auswahl; per Drag & Drop sortierbar.
+ *  - Radar-Chart (5 Achsen: F1ALYTICS, Punkte, Siege, Podien, Ø Platz).
+ *  - Balken-Diagramm für Hauptmetriken (normiert auf Max-Wert).
+ *  - Statistik-Tabelle mit Highlight des besten Teams pro Zeile.
+ *  - Kumulativer SVG-Punkteverlauf (teamCum addiert Fahrer-Werte).
+ *  - Fahrer-Duell-Vergleich innerhalb eines Teams (erste 2 Fahrer).
+ *
+ * dmap: verhindert optisch zu ähnliche Farben – wählt ggf. aus PALETTE
+ * einen alternativen Farbton wenn Euklidischer Abstand im RGB-Raum < 115.
+ */
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

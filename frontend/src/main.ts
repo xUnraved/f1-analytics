@@ -1,3 +1,7 @@
+/**
+ * Anwendungs-Einstiegspunkt: registriert Pinia (State), Vue-Router und vue-i18n,
+ * dann mountet die App in #app.
+ */
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 

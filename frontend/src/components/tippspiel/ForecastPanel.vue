@@ -66,6 +66,17 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * F1ALYTICS FORECAST Panel – zeigt die Sieger-Wahrscheinlichkeiten des nächsten GP.
+ *
+ * Datenquelle: GET /api/forecast/:year (ForecastService, Softmax-Temperature 1.15).
+ * Anzeige: Top-10 Fahrer sortiert nach rating (kombinierter Score).
+ * Spalten: Win-% (Balken), Podium-%, Form-Chip, Strecken-Chip, Trend-Pfeil.
+ *
+ * formClass(): Chip-Farbe grün ≥7.5, grau ≥5.0, gelb <5.0.
+ * Strecken-Chip zeigt null als "–" wenn < 2 historische Rennen auf dieser Strecke.
+ * Trend-Basis: +/- Formvergleich der letzten 3 vs. vorigen 3 Rennen.
+ */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

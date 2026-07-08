@@ -11,6 +11,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Persistiert und lädt einzelne Rennergebnisse (Race) als JSON-Blob in PostgreSQL (race_cache).
+ * Granularerer Cache als SeasonCacheStore: ein Eintrag pro Session statt pro Jahr.
+ * Ermöglicht das gezielte Neuladen eines einzelnen Rennens ohne die gesamte Saison zu invalidieren.
+ */
 @ApplicationScoped
 public class RaceCacheStore {
 

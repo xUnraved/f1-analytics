@@ -30,6 +30,16 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Root-Komponente der Anwendung.
+ *
+ * Enthält:
+ *  - .ambient: rein dekoratives Hintergrund-Layer (Schienen, Kerb-Streifen,
+ *    Schachbrett-Ecken, Speedlines) – pointer-events: none, aria-hidden.
+ *  - TheHeader: globale Navigation.
+ *  - <router-view>: Haupt-Seiteninhalt (derzeit nur HomeView).
+ *  - app-footer: Techstack- und Datenquellenhinweis.
+ */
 import { useI18n } from 'vue-i18n'
 import TheHeader from '@/components/layout/TheHeader.vue'
 

@@ -16,6 +16,11 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Wiederverwendbarer Lade-Fortschrittsbalken.
+ * pct: 0–100 → bestimmt Balkenbreite; undefined → indeterminate-Animation (Scan-Loop).
+ * sub: optionaler Untertext unter dem Balken (z. B. "4 / 24 Rennen").
+ */
 defineProps<{
   label: string
   pct?: number

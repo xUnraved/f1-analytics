@@ -37,6 +37,12 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Rennergebnis-Tab: zeigt Starterfeld mit Platz, Fahrer, Team, Runden,
+ * Abstand und F1alytics ScoreBadge.
+ * out(): DNF/DNS/DSQ-Fahrer werden optisch ausgegraut (row-out).
+ * gapDisplay(): zeigt „—" für P1 und für ausgeschiedene Fahrer.
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

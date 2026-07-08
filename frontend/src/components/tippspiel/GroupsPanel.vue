@@ -105,6 +105,20 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Gruppen-Panel für das Tippspiel.
+ *
+ * Funktionen:
+ *  - Eigene Gruppen anzeigen und auswählen.
+ *  - Neue Gruppe erstellen (POST /api/groups).
+ *  - Gruppe per 6-Zeichen Einladungs-Code beitreten (POST /api/groups/join).
+ *  - Gruppe verlassen (POST /api/groups/:id/leave).
+ *  - Einladungs-Code in Zwischenablage kopieren.
+ *  - Gruppen-Leaderboard pro Saison laden (GET /api/groups/:id/leaderboard/:year).
+ *
+ * serverError(): gibt Backend-Fehlermeldung zurück (nur für DE; EN erhält fallback).
+ * setMessage(): zeigt Feedback 4 Sekunden lang an.
+ */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

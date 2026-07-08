@@ -61,6 +61,20 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Detailansicht eines GP-Wochenendes mit Tab-Navigation.
+ *
+ * Tabs (kontextsensitiv):
+ *  - result: Rennergebnis (immer sichtbar)
+ *  - qualifying: nur wenn qualifyingResult vorhanden
+ *  - practice: nur wenn practiceResults vorhanden
+ *  - drivers: Fahrer-Vergleich
+ *  - teams: Team-Übersicht
+ *  - replay: GPS-Replay (nur für abgeschlossene Rennen mit sessionKey)
+ *
+ * Refresh-Button ruft store.refreshRaceSingle() auf (synchron, kein Polling).
+ * trackImgError: verhindert broken-image-Icon bei fehlendem Streckenbild.
+ */
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'

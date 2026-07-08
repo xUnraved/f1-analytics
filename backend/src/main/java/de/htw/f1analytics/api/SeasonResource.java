@@ -13,12 +13,21 @@ import jakarta.ws.rs.core.MediaType;
 
 import java.util.List;
 
+/**
+ * REST-Endpunkte für Saison- und Renndaten.
+ * Alle Pfade liegen unter /api.
+ *
+ * Lesende Endpunkte delegieren direkt an SeasonService, der intern
+ * einen zweistufigen Cache (RAM + PostgreSQL) verwaltet.
+ * @Blocking-Annotation ist nötig, da SeasonService synchrone DB-/API-Calls macht.
+ */
 @Path("/api")
 public class SeasonResource {
 
     @Inject
     SeasonService seasonService;
 
+    /** Gibt alle bekannten Saison-Jahre zurück (z. B. [2023, 2024, 2025]). */
     @GET
     @Path("/seasons")
     @Produces(MediaType.APPLICATION_JSON)
@@ -26,6 +35,11 @@ public class SeasonResource {
         return seasonService.years();
     }
 
+    /**
+     * Gibt die vollständigen aggregierten Statistiken einer Saison zurück.
+     * Wird bei der ersten Anfrage aus der OpenF1-API aufgebaut (dauert Minuten)
+     * und danach aus dem Cache bedient.
+     */
     @GET
     @Path("/season")
     @Produces(MediaType.APPLICATION_JSON)
@@ -33,6 +47,10 @@ public class SeasonResource {
         return seasonService.seasonStats(year);
     }
 
+    /**
+     * Löscht den kompletten Cache einer Saison (RAM + DB).
+     * Der nächste GET /season?year=X baut ihn neu auf.
+     */
     @DELETE
     @Path("/season/cache")
     @Blocking
@@ -40,6 +58,7 @@ public class SeasonResource {
         seasonService.clearCache(year);
     }
 
+    /** Löscht einen einzelnen Renncache, ohne die gesamte Saison zu invalidieren. */
     @DELETE
     @Path("/race")
     public void clearRace(@QueryParam("session_key") int sessionKey, @QueryParam("year") int year) {

@@ -17,6 +17,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Verwaltung von Tippspiel-Gruppen.
+ *
+ * Gruppen:
+ *   - Werden mit einem zufälligen 6-stelligen Einladungscode erstellt
+ *   - Zeichensatz ohne verwechselbare Zeichen (kein O/0, I/1)
+ *   - Max. 20 Gruppen pro Benutzer
+ *   - Wenn der Owner die Gruppe verlässt, wird das älteste verbleibende Mitglied Owner
+ *   - Leere Gruppen werden automatisch gelöscht
+ *
+ * Rangliste: Delegiert an BettingService.leaderboard() und filtert auf Gruppenmitglieder.
+ */
 @ApplicationScoped
 public class GroupService {
 

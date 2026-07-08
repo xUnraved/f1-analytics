@@ -13,8 +13,14 @@ import org.jboss.logging.Logger;
 import java.util.List;
 
 /**
- * Zentraler Datenbankzugriff für alle F1-Rohdaten.
- * Trennt Persistenz klar vom Aggregations-Service.
+ * Zentraler Datenbankzugriff für alle F1-Rohdaten (Sessions, Ergebnisse, GPS-Positionen).
+ * Trennt Persistenz klar vom Aggregations-Service (SeasonService, ReplayService).
+ *
+ * Alle schreibenden Methoden sind @Transactional — sie dürfen nur aus managed-Bean-Kontext
+ * aufgerufen werden. Lesende Methoden haben keinen Transaktions-Overhead.
+ *
+ * Statische Factory-Methoden (fromDto, raceResult, sessionResult, location) erzeugen Entities
+ * ohne DB-Zugriff und ermöglichen sauberes Mapping in den aufrufenden Services.
  */
 @ApplicationScoped
 public class F1DataStore {
@@ -24,6 +30,11 @@ public class F1DataStore {
     @Inject
     EntityManager em;
 
+    /**
+     * Speichert oder aktualisiert eine Session.
+     * Beim Update werden nur Bild-URLs und Koordinaten überschrieben (stabile Felder),
+     * damit Meta-Daten wie sessionName und dateStart nicht verloren gehen.
+     */
     @Transactional
     public void saveSession(F1SessionEntity e) {
         F1SessionEntity existing = F1SessionEntity.findById(e.sessionKey);
@@ -66,6 +77,11 @@ public class F1DataStore {
         F1ResultEntity.deleteBySession(sessionKey);
     }
 
+    /**
+     * Bulk-Insert für GPS-Positionsdaten.
+     * Flush+Clear alle 500 Zeilen verhindert OutOfMemoryError bei großen Sessions
+     * (ein Rennen hat typisch 50.000–200.000 GPS-Punkte).
+     */
     @Transactional
     public void saveLocations(List<F1LocationEntity> rows) {
         if (rows.isEmpty()) return;
@@ -94,6 +110,7 @@ public class F1DataStore {
         F1LocationEntity.deleteBySession(sessionKey);
     }
 
+    /** Löscht alle Sessions, Ergebnisse und GPS-Daten eines Jahres (für Cache-Reset). */
     @Transactional
     public void deleteYear(int year) {
         List<F1SessionEntity> sessions = F1SessionEntity.list("year", year);
@@ -104,6 +121,7 @@ public class F1DataStore {
         F1SessionEntity.delete("year", year);
     }
 
+    /** Erstellt eine F1SessionEntity aus dem OpenF1-DTO und Zusatzdaten (Bilder, Koordinaten). */
     public static F1SessionEntity fromDto(OpenF1SessionDto dto, int year,
                                            String circuitImage, String countryFlag,
                                            double lat, double lon) {

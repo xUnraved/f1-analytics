@@ -35,6 +35,11 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Saison-Gesamtübersicht: Punkte-Chart + Fahrer-WM + Konstrukteurs-WM.
+ * Zeigt einen LoadingBar während der Backend-Cache noch aufgebaut wird
+ * (store.loading=true). Fortschrittsbalken wird mit races.length/totalRaces berechnet.
+ */
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import LoadingBar from '@/components/ui/LoadingBar.vue'

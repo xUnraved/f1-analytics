@@ -21,6 +21,16 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Farbiger Badge für den F1alytics-Score (1–10).
+ *
+ * Akzeptiert entweder das vollständige ScoreCard-Objekt (card) für Hover-Tooltip
+ * mit Q/R/Delta/Base/Modifier-Aufschlüsselung, oder nur den Zahlenwert (value)
+ * für einfache Anzeige (z. B. in der Driver-WM-Tabelle für den Durchschnittscore).
+ *
+ * Farbbänder: elite ≥8.5 (grün), strong ≥7.0, par ≥5.5 (blau), weak ≥4.0 (gelb), poor <4.0 (rot).
+ * DNF-Scores erhalten ein „*"-Suffix (Wert ist durch cap auf max. 7.5 begrenzt).
+ */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ScoreCard } from '@/types/f1'

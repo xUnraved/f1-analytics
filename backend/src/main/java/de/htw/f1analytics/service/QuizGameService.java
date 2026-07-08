@@ -12,6 +12,22 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+/**
+ * Generiert dynamische Quiz-Inhalte für den Saison-Quiz und das Millionär-Quiz.
+ *
+ * Saison-Quiz (seasonQuiz):
+ *   - 12 Fragen zu Rennsiegern, Pole-Positions, WM-Führung und Teamsiegen einer Saison
+ *   - Antwortoptionen werden aus dem echten Fahrer-/Team-Pool der Saison generiert
+ *   - Fragen in Deutsch oder Englisch je nach lang-Parameter
+ *
+ * Millionär-Quiz (millionaire):
+ *   - 15 Fragen, aufsteigend nach Schwierigkeit (5 Schwierigkeitsstufen)
+ *   - Punkteleiter: 100 – 200 – 300 – 500 – 1.000 – 2.000 – 4.000 – 8.000 – 16.000
+ *                  – 32.000 – 64.000 – 125.000 – 250.000 – 500.000 – 1.000.000
+ *   - Sicherheitsstufen bei Frage 5 und 10 (Punkte bleiben auch bei Fehler)
+ *   - Kombination aus statischem Fragenkatalog (STATIC_BANK) und dynamischen
+ *     Fragen aus den gespeicherten Saisondaten (dynamicHardQuestions)
+ */
 @ApplicationScoped
 public class QuizGameService {
 

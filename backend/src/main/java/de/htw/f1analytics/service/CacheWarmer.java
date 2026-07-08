@@ -10,6 +10,17 @@ import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Wärmt den Saison-Cache beim Quarkus-Start asynchron auf.
+ *
+ * Beim Start wird für jede Saison (aktuelles Jahr bis START_YEAR, neueste zuerst)
+ * ensureCached() aufgerufen. Falls die Daten bereits im DB-Cache liegen, ist dies
+ * ein reiner DB-Lesezugriff. Sind sie nicht gecacht, werden sie von der OpenF1-API
+ * geladen (kann mehrere Minuten dauern).
+ *
+ * Läuft in einem virtuellen Thread ("cache-warmer") damit der Quarkus-Start
+ * nicht blockiert wird.
+ */
 @ApplicationScoped
 public class CacheWarmer {
 

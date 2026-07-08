@@ -1,3 +1,8 @@
+/**
+ * Vue-Router-Konfiguration.
+ * Aktuell eine einzige Route "/" → HomeView.
+ * History-Modus (createWebHistory): URLs ohne Hash, BASE_URL aus Vite-Env.
+ */
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 

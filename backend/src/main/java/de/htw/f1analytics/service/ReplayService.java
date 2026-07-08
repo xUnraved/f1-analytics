@@ -18,6 +18,19 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+/**
+ * Lädt und cachet GPS-Replay-Daten für F1-Rennen.
+ *
+ * Cache-Hierarchie (Cache-Hit gibt immer das oberste Level zurück):
+ *   1. RAM-Cache (ConcurrentHashMap)  – schnellster Pfad, verloren bei Neustart
+ *   2. PostgreSQL (f1_location)        – überdauert Neustarts, Millisekunden-Auflösung
+ *   3. OpenF1 API (/location)          – Quelle, langsam (pro Fahrer 2,5 s Throttle)
+ *
+ * Pro-Session-Lock verhindert parallele Doppel-Abrufe (z. B. Prefetch + manueller Load).
+ *
+ * Frame-Auflösung: echte GPS-Zeitstempel (~4 Hz) statt 1-Hz-Raster, damit die
+ * Frontend-Animation interpolieren kann ohne künstlich ausgedünnte Stützpunkte.
+ */
 @ApplicationScoped
 public class ReplayService {
 
@@ -48,6 +61,7 @@ public class ReplayService {
 
     public record ReplayData(List<ReplayDriver> drivers, List<ReplayFrame> frames, double duration) {}
 
+    /** Löscht RAM-Cache und DB-Daten für eine Session (für manuelle Invalidierung über die UI). */
     public void clearReplay(int sessionKey) {
         ramCache.remove(sessionKey);
         dataStore.deleteLocations(sessionKey);
@@ -223,6 +237,13 @@ public class ReplayService {
         return new ReplayData(List.of(), List.of(), 0);
     }
 
+    /**
+     * Parst einen ISO-8601-Zeitstempel (inkl. Sub-Millisekunden und ohne Timezone) zu Epochenmillisekunden.
+     * OpenF1 liefert Zeitstempel in drei Varianten:
+     *   "2024-03-02T15:00:00.123456+00:00" (mit Offset und Mikrosekunden)
+     *   "2024-03-02T15:00:00.123+00:00"    (mit Offset, Millisekunden)
+     *   "2024-03-02T15:00:00.123456"        (ohne Timezone → UTC angenommen)
+     */
     static long parseIso(String date) {
         if (date == null) return 0;
         // 1. Standard ISO with offset
@@ -245,6 +266,12 @@ public class ReplayService {
         }
     }
 
+    /**
+     * Führt einen API-Call mit Rate-Limit-Throttle und automatischen Wiederholungsversuchen aus.
+     * HTTP 429 (Too Many Requests): 65 s Pause, max. MAX_RETRY Versuche.
+     * HTTP 5xx (Serverfehler):       exponentiell wachsende Pause (2 s × Versuch).
+     * ProcessingException (Netzwerk): 700 ms × Versuch.
+     */
     private <T> List<T> fetch(Supplier<List<T>> call) {
         int attempts = 0;
         while (true) {

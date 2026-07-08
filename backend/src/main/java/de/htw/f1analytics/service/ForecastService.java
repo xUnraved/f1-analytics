@@ -10,6 +10,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Berechnet statistische Rennprognosen für alle Fahrer einer Saison.
+ *
+ * Rating-Formel (4 gewichtete Faktoren):
+ *   35 % WM-Punkte-Anteil      (Gesamtleistung der Saison)
+ *   30 % Aktuelle Form          (F1alytics-Durchschnitt der letzten 3 Rennen)
+ *   20 % Sieg-Rate              (Siege / abgeschlossene Rennen)
+ *   15 % Strecken-Performance   (historischer F1alytics-Score auf dieser Strecke/Land)
+ *
+ * Aus den Ratings wird per Softmax (Temperatur 1,15) eine normierte
+ * Gewinnwahrscheinlichkeit berechnet. Höhere Temperatur = weniger extremes Ergebnis.
+ *
+ * Podium-Wahrscheinlichkeit: 60 % Hochrechnung aus Win-Prob + 40 % historische Podium-Rate.
+ */
 @ApplicationScoped
 public class ForecastService {
 

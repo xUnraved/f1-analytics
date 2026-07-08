@@ -55,6 +55,14 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Rennkalender-Kachelgitter für eine Saison.
+ *
+ * Zeigt alle Rennen als anklickbare Kacheln. Abgeschlossene Rennen
+ * zeigen Sieger-Name und Teamfarbe; ausstehende zeigen Tage bis zum Rennen
+ * (daysUntil), "HEUTE" oder "AUSSTEHEND". Während des Ladens wird ein
+ * LoadingBar mit Fortschritt (races.length / totalRaces) angezeigt.
+ */
 import { useI18n } from 'vue-i18n'
 import { useSeasonStore } from '@/stores/seasonStore'
 import LoadingBar from '@/components/ui/LoadingBar.vue'

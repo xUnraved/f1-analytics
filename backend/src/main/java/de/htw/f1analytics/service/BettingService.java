@@ -16,6 +16,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Verwaltet Tipps, Abrechnung und Ranglisten des Tippspiels.
+ *
+ * Tipp-Kategorien:
+ *   WINNER     → Rennsieger (10 Punkte)
+ *   POLE       → Pole-Position in der Qualifikation (5 Punkte)
+ *   PODIUM     → P1/P2/P3 in Reihenfolge (je 5 Punkte, max. 15)
+ *   FASTEST_LAP → Schnellste Rennrunde (3 Punkte)
+ *   H2H        → Head-to-Head-Duell: Fahrer A schlägt Fahrer B (4 Punkte)
+ *
+ * Abrechnung (settleIfNeeded):
+ *   - Wird beim Laden von Renndaten (tippsForRace, leaderboard) automatisch ausgelöst
+ *   - Punkte werden erst vergeben, wenn das Rennen als "completed" markiert ist
+ *   - Einmal vergebene Punkte werden nicht neu berechnet (points != null → skip)
+ */
 @ApplicationScoped
 public class BettingService {
 
@@ -168,6 +183,11 @@ public class BettingService {
         t.settledAt = Instant.now();
     }
 
+    /**
+     * Berechnet die Punkte für einen Tipp anhand des Rennergebnisses.
+     * Gibt 0 zurück, wenn die Kategorie unbekannt ist oder die Daten fehlen.
+     * Package-private für Unit-Tests in BettingServiceTest.
+     */
     int computePoints(SeasonService.Race race, String category, String pick) {
         switch (category) {
             case CAT_WINNER -> {

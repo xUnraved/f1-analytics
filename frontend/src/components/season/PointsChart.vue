@@ -23,6 +23,13 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Kumulativer WM-Punkte-Verlauf als Chart.js Liniendiagramm.
+ *
+ * Zeigt die kumulierten Punkte (DriverStanding.cum) der Top-N Fahrer
+ * über alle abgeschlossenen Rennen. TOP-Auswahl: 3 / 5 / 10.
+ * Nur abgeschlossene Rennen werden als X-Achsen-Labels gezeigt.
+ */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Line } from 'vue-chartjs'

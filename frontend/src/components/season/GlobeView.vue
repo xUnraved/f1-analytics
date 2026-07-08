@@ -10,6 +10,21 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Interaktiver 3D-Globus (Three.js) mit GP-Streckenmarkierungen.
+ *
+ * Erzeugt eine Erdkugel mit prozedural gerendeter Küstenlinie (COAST-Polygon-Daten)
+ * und platziert für jedes Rennen einen Sprite-Pin auf der Kugeloberfläche.
+ * Abgeschlossene Rennen: rot; ausstehende: grau.
+ *
+ * Interaktion:
+ *  - Drag (ein Finger / Maus): rotiert den Globus.
+ *  - Pinch / Mausrad: zoomt (camZ zwischen ZMIN und ZMAX).
+ *  - Klick auf Pin: öffnet Renndetail (store.openRace + emit('select')).
+ *  - Kein Drag: Auto-Rotation mit AUTO rad/Frame.
+ *
+ * Schlägt die WebGL-Initialisierung fehl, bleibt das Canvas leer ohne Fehler.
+ */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as THREE from 'three'
 import { COAST } from '@/assets/coastline'
