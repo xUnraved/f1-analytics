@@ -378,6 +378,5 @@ f1-analytics/
 | **Renn-Replay-Ladezeit** | GPS-Daten für ein Rennen (~20 Fahrer) benötigen beim Erstladen ca. 50–120 Sekunden. Danach ist der Replay gecacht. |
 | **GPS-Genauigkeit** | Die OpenF1-API liefert GPS-Daten mit ~3–4 Hz. Das Frontend interpoliert zwischen Messpunkten; sehr kurze Zeitabschnitte (Starts, Pitstops) können leicht ungenau erscheinen. |
 | **Kein Produktions-Deployment** | Die App ist für den lokalen Betrieb konfiguriert. Für ein Deployment müssen CORS-Einstellungen, Datenbankverbindung und Frontend-API-URL angepasst werden. |
-| **Passwort im Klartext in Config** | Das Datenbankpasswort steht in `application.properties`; für Produktivbetrieb sollte Quarkus-Config mit Secrets-Management (z. B. Umgebungsvariablen) genutzt werden. |
 | **Nur eine Route** | Das Frontend ist als echte SPA mit nur einer Route (`/`) implementiert; Deep-Linking in Unteransichten ist nicht vorgesehen. |
 | **OpenF1-Datenverfügbarkeit** | Nicht alle historischen Saisons sind in OpenF1 vollständig abgedeckt. Fehlende Daten werden als leere Ergebnisse angezeigt. |
