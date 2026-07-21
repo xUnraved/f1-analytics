@@ -4,6 +4,78 @@ Eine webbasierte Analyse-Plattform für Formel-1-Daten auf Basis der öffentlich
 
 ---
 
+## Screenshots
+
+<table>
+<tr>
+<td width="50%">
+
+**Startseite mit interaktivem 3D-Globus**
+Saison-Auswahl per Drehrad und eine rotierende Weltkarte, die alle Rennstrecken der Saison markiert.
+
+<img src="docs/screenshots/01-hero-globus.png" alt="Startseite mit Saison-Auswahl und 3D-Globus" width="100%" />
+
+</td>
+<td width="50%">
+
+**Renn-Übersicht**
+Alle Rennen der Saison als Karten-Raster mit Sieger, Termin und Status.
+
+<img src="docs/screenshots/02-rennen-uebersicht.png" alt="Renn-Übersicht als Karten-Raster" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Rennergebnis mit F1alytics Score**
+Finale Platzierungen inkl. Abstand, Status und dem proprietären F1alytics-Score (1–10) je Fahrer.
+
+<img src="docs/screenshots/03-rennergebnis.png" alt="Rennergebnis-Tabelle mit F1alytics Score" width="100%" />
+
+</td>
+<td width="50%">
+
+**GPS-Renn-Replay**
+Animierte Fahrzeugpositionen auf der Streckenkarte mit Live-Timing-Panel (Runde, Reifen, Abstand, Flaggen).
+
+<img src="docs/screenshots/04-replay.png" alt="GPS-Renn-Replay mit Live-Timing-Panel" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Fahrer- & Konstrukteurswertung**
+Kumulierter Punkteverlauf als Liniendiagramm sowie sortierte Fahrer- und Team-Tabellen.
+
+<img src="docs/screenshots/05-wertung.png" alt="Fahrer- und Konstrukteurswertung mit Punkteverlauf-Chart" width="100%" />
+
+</td>
+<td width="50%">
+
+**Quiz**
+Vier Modi – Strecken-, Fahrer-, Saison- und Millionär-Quiz mit Gewinn-Leiter.
+
+<img src="docs/screenshots/06-quiz.png" alt="Quiz-Modusauswahl" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Tippspiel**
+Platzierungs-Tipps für bevorstehende Rennen mit Punktesystem, Gruppen und Login.
+
+<img src="docs/screenshots/07-tippspiel.png" alt="Tippspiel mit Punktesystem und Login" width="100%" />
+
+</td>
+<td width="50%"></td>
+</tr>
+</table>
+
+---
+
 ## Inhaltsverzeichnis
 
 1. [Einführung](#1-einführung)
