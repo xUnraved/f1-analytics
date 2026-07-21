@@ -120,19 +120,19 @@ Zusätzlich stellt die OpenF1-API keine Caching-Schicht bereit — bei wiederhol
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Browser (SPA)                     │
+│                    Browser (SPA)                    │
 │             Vue 3 · Pinia · vue-i18n                │
-│         http://localhost:5173                        │
+│         http://localhost:5173                       │
 └──────────────────────┬──────────────────────────────┘
                        │ HTTP / REST (JSON)
                        │ /api/*  (Vite-Proxy → :8081)
 ┌──────────────────────▼──────────────────────────────┐
-│              Quarkus REST-API (Java 25)              │
-│         http://localhost:8081                        │
-│                                                      │
+│              Quarkus REST-API (Java 25)             │
+│         http://localhost:8081                       │
+│                                                     │
 │  REST Resources  →  Services  →  F1DataStore        │
 │                        │                            │
-│              ┌─────────┴──────────┐                │
+│              ┌─────────┴──────────┐                 │
 │              ▼                    ▼                 │
 │       PostgreSQL DB         OpenF1 REST-Client      │
 │       (f1analytics)         https://api.openf1.org  │
